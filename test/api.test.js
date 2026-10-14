@@ -108,6 +108,29 @@ test('Gesamtablauf: Einrichtung, Lehrkraft, Klasse, Übung, Test, Note, Export',
   assert.ok(basics.data.newBadges.some((b) => b.id === 'grundstellung'));
   assert.equal((await s1.get('/api/me')).data.onboardingDone, true);
 
+  // Kurs: erste Lektion offen, zweite gesperrt; mit wenigen Fehlern bestanden.
+  let course = (await s1.get('/api/me/course')).data;
+  assert.equal(course.lessons[0].unlocked, true);
+  assert.equal(course.lessons[1].unlocked, false);
+  assert.equal((await s1.post('/api/results', { kind: 'course', lessonId: course.lessons[1].id, durationMs: 60000, gross: 150, correct: 150, errors: 0 })).status, 400);
+  const fail = await s1.post('/api/results', { kind: 'course', lessonId: 'grundreihe', durationMs: 60000, gross: 150, correct: 140, errors: 10 });
+  assert.equal(fail.data.course.passed, false);
+  const pass = await s1.post('/api/results', {
+    kind: 'course', lessonId: 'grundreihe', durationMs: 60000, gross: 150, correct: 149, errors: 1,
+    confusions: [['ö', 'ä', 3], ['z', 'y', 1]], errorWords: { Ölfass: 2 },
+  });
+  assert.equal(pass.data.course.passed, true);
+  assert.equal(pass.data.course.newlyPassed, true);
+  assert.equal(pass.data.course.next.id, 'oben-links');
+  course = (await s1.get('/api/me/course')).data;
+  assert.equal(course.lessons[1].unlocked, true);
+
+  // Fehleranalyse sammelt Verwechslungen und Wörter.
+  await s1.post('/api/results', { kind: 'focus', durationMs: 60000, gross: 100, correct: 98, errors: 2, confusions: [['z', 'y', 2]], errorWords: { Ölfass: 1 } });
+  const prof = (await s1.get('/api/me/errors')).data;
+  assert.deepEqual(prof.confusions.map((c) => [c.expected, c.typed, c.count]), [['z', 'y', 3], ['ö', 'ä', 3]]);
+  assert.deepEqual(prof.words, [{ word: 'Ölfass', count: 3 }]);
+
   // Unplausible Werte werden abgelehnt.
   assert.equal((await s1.post('/api/results', { kind: 'text', durationMs: 1000, gross: 900, correct: 900, errors: 0 })).status, 400);
 
@@ -177,6 +200,20 @@ test('Gesamtablauf: Einrichtung, Lehrkraft, Klasse, Übung, Test, Note, Export',
   assert.equal(csv.status, 200);
   assert.match(csv.data, /Pseudonym;Benutzername/);
   assert.match(csv.data, /Grundstellung/);
+
+  // Lehrkraft sieht Kurs und Fehleranalyse.
+  const detail = (await teacher.get(`/api/students/${row.user_id}/results`)).data;
+  assert.equal(detail.course.filter((l) => l.passed).length, 1);
+  assert.equal(detail.errors.confusions.length, 2);
+
+  // Neuer Druckbogen für ausgewählte Schüler: neue Passwörter, alte gelten nicht mehr.
+  const re = await teacher.post(`/api/classes/${classId}/reset-passwords`, { studentIds: [row.user_id] });
+  assert.equal(re.data.credentials.length, 1);
+  assert.equal((await client().post('/api/login', { username: c1.username, password: c1.password })).status, 401);
+  assert.equal((await client().post('/api/login', { username: c1.username, password: re.data.credentials[0].password })).status, 200);
+  const all = await teacher.post(`/api/classes/${classId}/reset-passwords`, {});
+  assert.equal(all.data.credentials.length, 2);
+  assert.equal((await teacher2.post(`/api/classes/${classId}/reset-passwords`, {})).status, 404);
 
   // Passwort-Reset meldet den Schüler ab.
   await teacher.post(`/api/students/${row.user_id}/reset-password`);

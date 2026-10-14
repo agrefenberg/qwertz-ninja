@@ -2,6 +2,8 @@ import { tx } from './db.js';
 import { generateUsername, hashPassword, slugify } from './auth.js';
 import { newBadges } from './gamify.js';
 import { metrics } from '../public/js/scoring.js';
+import { LESSONS } from '../public/js/course.js';
+import { WORDS } from '../public/js/words.js';
 
 // Demodaten zum Ausprobieren. Alle Demo-Lehrkräfte beginnen mit "demo-"; beim Entfernen
 // werden sie mit ihren Klassen, Schülerkonten und Ergebnissen gelöscht.
@@ -33,7 +35,12 @@ export function removeDemo(db) {
   });
 }
 
+const CONFUSIONS = [
+  ['z', 'y'], ['y', 'z'], ['ö', 'ä'], ['ä', 'ö'], ['ü', 'ö'], ['ß', 's'], ['e', 'r'], ['i', 'o'], ['n', 'm'],
+  [',', '.'], ['B', 'b'], ['S', 's'], ['g', 'h'], ['t', 'z'], ['c', 'x'], ['ü', '+'],
+];
 const rand = (a, b) => a + Math.random() * (b - a);
+const shuffleArr = (a) => a.map((x) => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 function gauss() {
   return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
@@ -101,6 +108,27 @@ export function createDemo(db, now = Date.now()) {
           const runs = Math.round(rand(4, 38));
           const speedAt = (ts) => start * (1 + gain * Math.min(1, Math.max(0, (ts - (now - 42 * DAY)) / (42 * DAY))));
           let xp = 0;
+
+          // Kursfortschritt: bessere Schüler sind weiter.
+          const lessonsDone = Math.max(0, Math.min(LESSONS.length, Math.round((start / 220) * LESSONS.length * rand(0.4, 1.1))));
+          const insCourse = db.prepare(
+            'INSERT INTO course_progress (user_id, lesson_id, attempts, best_apm, best_error_rate, stars, passed_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          );
+          for (let l = 0; l < lessonsDone; l++) {
+            const apm = Math.round(start * rand(0.8, 1.2));
+            const er = Math.round(rand(0.3, 3) * 10) / 10;
+            const st = apm >= LESSONS[l].fast && er <= 1 ? 3 : apm >= LESSONS[l].fast * 0.8 ? 2 : 1;
+            insCourse.run(userId, LESSONS[l].id, Math.round(rand(1, 4)), apm, er, st, now - (lessonsDone - l) * rand(1, 2.5) * DAY);
+          }
+          if (lessonsDone < LESSONS.length && Math.random() < 0.6) {
+            insCourse.run(userId, LESSONS[lessonsDone].id, Math.round(rand(1, 3)), Math.round(start * 0.9), Math.round(rand(3.5, 8) * 10) / 10, 0, null);
+          }
+
+          // Typische Verwechslungen und oft verschriebene Wörter.
+          const insPair = db.prepare('INSERT OR IGNORE INTO error_pairs (user_id, expected, typed, count) VALUES (?, ?, ?, ?)');
+          for (const [e, t] of shuffleArr(CONFUSIONS).slice(0, Math.round(rand(2, 5)))) insPair.run(userId, e, t, Math.round(rand(2, 25) * (errBase / 3)));
+          const insWord = db.prepare('INSERT OR IGNORE INTO error_words (user_id, word, count) VALUES (?, ?, ?)');
+          for (const w of shuffleArr(WORDS.filter((x) => x.length > 4)).slice(0, Math.round(rand(3, 9)))) insWord.run(userId, w, Math.round(rand(2, 8)));
 
           const record = (kind, ts, durationMs, assignmentId = null) => {
             const apmTarget = Math.max(40, speedAt(ts) * (1 + gauss() * 0.08));

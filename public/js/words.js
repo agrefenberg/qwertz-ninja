@@ -62,3 +62,22 @@ export function weakExercise(weakChars, count = 40) {
   }
   return out.join(' ');
 }
+
+// Gegenüberstellung zweier verwechselter Zeichen: Wechselgriffe und Wörter mit dem richtigen Zeichen.
+export function contrastExercise(expected, typed, count = 36) {
+  const pair = [expected, typed].filter((c) => c.trim());
+  const drills = pair.length === 2 ? [`${pair[0]}${pair[1]}`, `${pair[1]}${pair[0]}`, `${pair[0]}${pair[0]}${pair[1]}`] : [];
+  const lower = expected.toLowerCase();
+  const words = WORDS.filter((w) => w.includes(expected) || w.toLowerCase().includes(lower));
+  const pool = words.length ? words : WORDS;
+  const out = [];
+  for (let i = 0; out.length < count; i++) out.push(i % 4 === 0 && drills.length ? drills[(i / 4) % drills.length] : pool[Math.floor(Math.random() * pool.length)]);
+  return out.join(' ');
+}
+
+// Die persönlich oft verschriebenen Wörter mehrfach in gemischter Reihenfolge.
+export function wordsExercise(words, rounds = 3) {
+  const out = [];
+  for (let r = 0; r < rounds; r++) out.push(...shuffle(words));
+  return out.join(' ');
+}

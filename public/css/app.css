@@ -414,6 +414,96 @@ kbd {
   background: var(--err);
 }
 
+/* ---------- Kurs und Fehleranalyse ---------- */
+
+.lessons {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.lessons li {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.lessons li.locked {
+  opacity: 0.55;
+}
+.lessons li.open {
+  border-color: var(--accent);
+}
+.lesson-no {
+  flex: 0 0 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: #eceef2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.lessons li.passed .lesson-no {
+  background: #dff3e6;
+  color: var(--ok);
+}
+.lesson-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.lesson-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+}
+.stars {
+  color: #e2a400;
+  letter-spacing: 0.1em;
+}
+.stars-off {
+  color: #c8cbd2;
+}
+.suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-decoration: none;
+  border-color: var(--accent);
+  border-left-width: 5px;
+}
+.suggestion strong {
+  font-size: 1.1rem;
+}
+.bar {
+  flex: 0 0 140px;
+  height: 8px;
+  background: #eceef2;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+.word-chip {
+  display: inline-block;
+  margin: 0 0.4rem 0.4rem 0;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+}
+.analysis .list li a.button {
+  margin-left: auto;
+}
+
 /* ---------- Gürtel und Abzeichen ---------- */
 
 .belt-card {

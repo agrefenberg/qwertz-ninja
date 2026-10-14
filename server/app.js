@@ -17,6 +17,7 @@ import { BADGES, levelFor, newBadges } from './gamify.js';
 import { compareTyped, metrics, normalizeChar, normalizeText, suggestGrade } from '../public/js/scoring.js';
 import { nextPurgeDate } from './retention.js';
 import { createDemo, hasDemo, removeDemo, DEMO_PASSWORD } from './demo.js';
+import { LESSONS, lessonById, starsFor, PASS_ERROR_RATE } from '../public/js/course.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COUNTDOWN_MS = 3000;
@@ -254,13 +255,19 @@ export function createApp(db, { secureCookies = false } = {}) {
 
   // ---------- Ergebnisse von Übungen ----------
 
-  const KINDS = ['text', 'words', 'weak', 'basics', 'exercise'];
+  const KINDS = ['text', 'words', 'weak', 'basics', 'exercise', 'course', 'focus'];
 
   app.post('/api/results', auth('student'), (req, res) => {
     const b = req.body;
     const kind = String(b.kind);
     if (!KINDS.includes(kind)) throw bad('Ungültige Übungsart.');
     let assignmentId = null;
+    let lesson = null;
+    if (kind === 'course') {
+      lesson = lessonById(String(b.lessonId));
+      if (!lesson) throw bad('Unbekannte Lektion.');
+      if (!lessonUnlocked(req.user.id, lesson.id)) throw bad('Diese Lektion ist noch gesperrt.');
+    }
     if (kind === 'exercise') {
       const a = db.prepare("SELECT id FROM assignments WHERE id = ? AND class_id = ? AND type = 'exercise'").get(int(b.assignmentId), req.user.class_id);
       if (!a) throw notFound();
@@ -282,10 +289,77 @@ export function createApp(db, { secureCookies = false } = {}) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(req.user.id, assignmentId, kind, durationMs, gross, correct, errors, correctedErrors, m.apm, m.wpm, m.errorRate, completed ? 1 : 0, Date.now());
       recordKeyStats(db, req.user.id, b.keyStats);
+      recordErrors(db, req.user.id, b.confusions, b.errorWords);
+      const course = lesson && completed ? updateCourse(req.user.id, lesson, m) : null;
       if (kind === 'basics') db.prepare('UPDATE users SET onboarding_done = 1 WHERE id = ?').run(req.user.id);
-      return award(req.user, { kind, gross, correct, errors, durationMs, completed, ...m });
+      return { ...award(req.user, { kind, gross, correct, errors, durationMs, completed, ...m }), course };
     });
     res.json({ ...m, ...out });
+  });
+
+  // ---------- Kurs ----------
+
+  function courseProgress(userId) {
+    const rows = db.prepare('SELECT * FROM course_progress WHERE user_id = ?').all(userId);
+    return new Map(rows.map((r) => [r.lesson_id, r]));
+  }
+
+  function lessonUnlocked(userId, lessonId) {
+    const idx = LESSONS.findIndex((l) => l.id === lessonId);
+    if (idx <= 0) return true;
+    return !!courseProgress(userId).get(LESSONS[idx - 1].id)?.passed_at;
+  }
+
+  function courseList(userId) {
+    const progress = courseProgress(userId);
+    let unlocked = true;
+    return LESSONS.map((l) => {
+      const p = progress.get(l.id);
+      const item = {
+        id: l.id,
+        title: l.title,
+        goal: l.goal,
+        unlocked,
+        attempts: p?.attempts ?? 0,
+        bestApm: p?.best_apm ?? null,
+        bestErrorRate: p?.best_error_rate ?? null,
+        stars: p?.stars ?? 0,
+        passed: !!p?.passed_at,
+      };
+      unlocked = unlocked && item.passed;
+      return item;
+    });
+  }
+
+  function updateCourse(userId, lesson, m) {
+    const before = courseProgress(userId).get(lesson.id);
+    const stars = starsFor(m, lesson);
+    const passedNow = stars > 0;
+    db.prepare(
+      `INSERT INTO course_progress (user_id, lesson_id, attempts, best_apm, best_error_rate, stars, passed_at) VALUES (?, ?, 1, ?, ?, ?, ?)
+       ON CONFLICT(user_id, lesson_id) DO UPDATE SET attempts = attempts + 1,
+         best_apm = MAX(best_apm, excluded.best_apm),
+         best_error_rate = MIN(COALESCE(best_error_rate, 100), excluded.best_error_rate),
+         stars = MAX(stars, excluded.stars),
+         passed_at = COALESCE(passed_at, excluded.passed_at)`
+    ).run(userId, lesson.id, m.apm, m.errorRate, stars, passedNow ? Date.now() : null);
+    const idx = LESSONS.indexOf(lesson);
+    const next = LESSONS[idx + 1];
+    return {
+      stars,
+      passed: passedNow,
+      newlyPassed: passedNow && !before?.passed_at,
+      passErrorRate: PASS_ERROR_RATE,
+      next: next ? { id: next.id, title: next.title } : null,
+    };
+  }
+
+  app.get('/api/me/course', auth('student'), (req, res) => {
+    res.json({ passErrorRate: PASS_ERROR_RATE, lessons: courseList(req.user.id) });
+  });
+
+  app.get('/api/me/errors', auth(), (req, res) => {
+    res.json(errorProfile(db, req.user.id));
   });
 
   function award(user, r) {
@@ -365,6 +439,7 @@ export function createApp(db, { secureCookies = false } = {}) {
          VALUES (?, ?, 'test', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
       ).run(req.user.id, id, durationMs, cmp.gross, cmp.correct, cmp.errors, int(req.body.correctedErrors ?? 0, { max: 100000 }), m.apm, m.wpm, m.errorRate, Date.now());
       recordKeyStats(db, req.user.id, req.body.keyStats);
+      recordErrors(db, req.user.id, req.body.confusions, req.body.errorWords);
       return award(req.user, { kind: 'test', ...cmp, durationMs, completed: true, ...m });
     });
     res.json({ ...cmp, durationMs, ...m, ...out });
@@ -444,7 +519,8 @@ export function createApp(db, { secureCookies = false } = {}) {
     const students = db
       .prepare(
         `SELECT u.id, u.username, u.display_name, u.xp, u.onboarding_done,
-           COUNT(r.id) AS runs, ROUND(AVG(r.apm), 1) AS avg_apm, ROUND(AVG(r.error_rate), 2) AS avg_error_rate, MAX(r.created_at) AS last_active
+           COUNT(r.id) AS runs, ROUND(AVG(r.apm), 1) AS avg_apm, ROUND(AVG(r.error_rate), 2) AS avg_error_rate, MAX(r.created_at) AS last_active,
+           (SELECT COUNT(*) FROM course_progress cp WHERE cp.user_id = u.id AND cp.passed_at IS NOT NULL) AS lessons_passed
          FROM users u LEFT JOIN results r ON r.user_id = u.id AND r.completed = 1
          WHERE u.class_id = ? GROUP BY u.id ORDER BY u.display_name`
       )
@@ -453,6 +529,7 @@ export function createApp(db, { secureCookies = false } = {}) {
       id: cls.id,
       name: cls.name,
       leaderboard: !!cls.leaderboard_enabled,
+      lessonCount: LESSONS.length,
       students: students.map((s) => ({ ...s, level: levelFor(s.xp) })),
     });
   });
@@ -491,6 +568,27 @@ export function createApp(db, { secureCookies = false } = {}) {
     res.json({ className: cls.name, credentials: [{ username: s.username, password, displayName: s.display_name }] });
   });
 
+  // Passwörter sind nur als Hash gespeichert. Ein neuer Druckbogen bedeutet deshalb neue Passwörter;
+  // Konten, Pseudonyme und Ergebnisse bleiben erhalten.
+  app.post('/api/classes/:id/reset-passwords', auth('teacher'), (req, res) => {
+    const cls = ownClass(req);
+    let students = db.prepare("SELECT id, username, display_name FROM users WHERE class_id = ? AND role = 'student' ORDER BY display_name").all(cls.id);
+    if (Array.isArray(req.body.studentIds) && req.body.studentIds.length) {
+      const wanted = new Set(req.body.studentIds.map(Number));
+      students = students.filter((s) => wanted.has(s.id));
+    }
+    if (!students.length) throw bad('Keine Schüler ausgewählt.');
+    const credentials = tx(db, () =>
+      students.map((s) => {
+        const password = generatePassword();
+        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), s.id);
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(s.id);
+        return { username: s.username, password, displayName: s.display_name };
+      })
+    );
+    res.json({ className: cls.name, credentials });
+  });
+
   app.delete('/api/students/:id', auth('teacher'), (req, res) => {
     const s = ownStudent(req);
     db.prepare('DELETE FROM users WHERE id = ?').run(s.id);
@@ -505,7 +603,14 @@ export function createApp(db, { secureCookies = false } = {}) {
          FROM results r LEFT JOIN assignments a ON a.id = r.assignment_id WHERE r.user_id = ? AND r.completed = 1 ORDER BY r.created_at DESC LIMIT 200`
       )
       .all(s.id);
-    res.json({ displayName: s.display_name, username: s.username, results: rows, weakKeys: weakKeys(db, s.id) });
+    res.json({
+      displayName: s.display_name,
+      username: s.username,
+      results: rows,
+      weakKeys: weakKeys(db, s.id),
+      errors: errorProfile(db, s.id),
+      course: courseList(s.id),
+    });
   });
 
   // ---------- Lehrkräfte: Notenschlüssel ----------
@@ -781,6 +886,41 @@ function recordKeyStats(db, userId, keyStats) {
     const misses = Math.min(Math.max(0, Number(v[1]) | 0), 100000);
     if (hits || misses) up.run(userId, ch, hits, misses);
   }
+}
+
+function recordErrors(db, userId, confusions, errorWords) {
+  if (Array.isArray(confusions)) {
+    const up = db.prepare(
+      'INSERT INTO error_pairs (user_id, expected, typed, count) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, expected, typed) DO UPDATE SET count = count + excluded.count'
+    );
+    for (const c of confusions.slice(0, 200)) {
+      if (!Array.isArray(c) || c.length !== 3) continue;
+      const [e, t, n] = c;
+      if (typeof e !== 'string' || typeof t !== 'string' || Array.from(e).length !== 1 || Array.from(t).length !== 1 || e === t) continue;
+      const count = Math.min(Math.max(1, Number(n) | 0), 1000);
+      up.run(userId, e, t, count);
+    }
+  }
+  if (errorWords && typeof errorWords === 'object') {
+    const up = db.prepare(
+      'INSERT INTO error_words (user_id, word, count) VALUES (?, ?, ?) ON CONFLICT(user_id, word) DO UPDATE SET count = count + excluded.count'
+    );
+    for (const [w, n] of Object.entries(errorWords).slice(0, 200)) {
+      if (typeof w !== 'string' || w.length < 2 || w.length > 40) continue;
+      up.run(userId, w, Math.min(Math.max(1, Number(n) | 0), 1000));
+    }
+  }
+}
+
+// Persönliche Fehleranalyse: schwache Tasten, typische Verwechslungen, oft verschriebene Wörter.
+export function errorProfile(db, userId) {
+  return {
+    weakKeys: weakKeys(db, userId, 10),
+    confusions: db
+      .prepare('SELECT expected, typed, count FROM error_pairs WHERE user_id = ? AND count >= 2 ORDER BY count DESC, expected, typed LIMIT 10')
+      .all(userId),
+    words: db.prepare('SELECT word, count FROM error_words WHERE user_id = ? AND count >= 2 ORDER BY count DESC, word LIMIT 15').all(userId),
+  };
 }
 
 // Zeichen mit der höchsten Fehlerquote (mindestens 10 Versuche, Leerzeichen ausgenommen).

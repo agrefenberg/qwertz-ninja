@@ -12,6 +12,12 @@ const ROUTES = {
     ['/', student.homeView],
     ['/ueben/:kind', student.practiceView],
     ['/ueben/text/:id', student.practiceTextView],
+    ['/ueben/fokus/:chars', student.focusView],
+    ['/ueben/verwechslung/:pair', student.contrastView],
+    ['/ueben/fehlerwoerter', student.errorWordsView],
+    ['/kurs', student.courseView],
+    ['/kurs/:id', student.lessonView],
+    ['/fehler', student.errorsView],
     ['/aufgabe/:id', student.assignmentView],
     ['/grundstellung', basicsView],
     ['/rangliste', student.leaderboardView],
@@ -37,6 +43,8 @@ const ROUTES = {
 const NAV = {
   student: [
     ['#/', 'Start'],
+    ['#/kurs', 'Kurs'],
+    ['#/fehler', 'Fehler'],
     ['#/verlauf', 'Verlauf'],
     ['#/rangliste', 'Rangliste'],
     ['#/einstellungen', 'Einstellungen'],

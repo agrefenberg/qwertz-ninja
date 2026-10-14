@@ -102,6 +102,32 @@ CREATE TABLE IF NOT EXISTS key_stats (
   PRIMARY KEY (user_id, ch)
 );
 
+CREATE TABLE IF NOT EXISTS course_progress (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lesson_id TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  best_apm REAL NOT NULL DEFAULT 0,
+  best_error_rate REAL,
+  stars INTEGER NOT NULL DEFAULT 0,
+  passed_at INTEGER,
+  PRIMARY KEY (user_id, lesson_id)
+);
+
+CREATE TABLE IF NOT EXISTS error_pairs (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expected TEXT NOT NULL,
+  typed TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, expected, typed)
+);
+
+CREATE TABLE IF NOT EXISTS error_words (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  word TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, word)
+);
+
 CREATE TABLE IF NOT EXISTS badges (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   badge TEXT NOT NULL,

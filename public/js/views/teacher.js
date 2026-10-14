@@ -1,5 +1,6 @@
 import { append, del, errorBox, fmtDate, fmtDuration, fmtNum, formData, get, h, patch, post, put, toast } from '../ui.js';
 import { state } from '../app.js';
+import { errorAnalysis, stars } from './student.js';
 
 const KIND_LABEL = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test' };
 
@@ -118,7 +119,7 @@ export async function classView(app, { id }) {
     h(
       'section.card',
       h('h2', `Schüler (${cls.students.length})`),
-      cls.students.length ? studentTable(cls.students, reload) : h('p.muted', 'Noch keine Schülerzugänge.'),
+      cls.students.length ? studentTable(cls, reload) : h('p.muted', 'Noch keine Schülerzugänge.'),
       h('h3', 'Neue Zugänge'),
       h('p.muted.small', 'Die App erzeugt Benutzernamen mit Pseudonym und Passwort, ohne Namen oder E-Mail-Adressen. Du bekommst eine Liste zum Ausdrucken und Zerschneiden. Die Passwörter sind nur jetzt sichtbar.'),
       createForm
@@ -126,21 +127,70 @@ export async function classView(app, { id }) {
   );
 }
 
-function studentTable(students, reload) {
+function studentTable(cls, reload) {
+  const students = cls.students;
+  const boxes = new Map();
+  const selected = () => [...boxes].filter(([, b]) => b.checked).map(([id]) => id);
+  const label = h('span', 'für alle');
+  const sync = () => {
+    const n = selected().length;
+    label.textContent = n ? `für ${n} ausgewählte` : 'für alle';
+    all.checked = n === students.length;
+  };
+  const all = h('input', {
+    type: 'checkbox',
+    'aria-label': 'Alle auswählen',
+    onchange: (e) => {
+      for (const b of boxes.values()) b.checked = e.target.checked;
+      sync();
+    },
+  });
+  const reprint = h(
+    'button',
+    {
+      onclick: async () => {
+        const ids = selected();
+        const n = ids.length || students.length;
+        if (!confirm(`Neuer Druckbogen ${ids.length ? `für ${n} ausgewählte Schüler` : `für alle ${n} Schüler`}?\n\nDie Passwörter werden dabei neu erzeugt, die alten gelten nicht mehr. Pseudonyme, Benutzernamen und Ergebnisse bleiben erhalten.`)) return;
+        try {
+          const res = await post(`/api/classes/${cls.id}/reset-passwords`, { studentIds: ids });
+          showCredentials(document.getElementById('app'), res, reload);
+        } catch (e) {
+          toast(e.message, 'error');
+        }
+      },
+    },
+    'Druckbogen erneut erstellen ',
+    label
+  );
+  return h(
+    'div',
+    h('div.toolbar', reprint, h('span.muted.small', 'Wähle einzelne Schüler aus, wenn nur deren Streifen fehlen. Die Passwörter werden dabei neu vergeben.')),
+    studentRows(students, boxes, all, sync, reload, cls.lessonCount)
+  );
+}
+
+function studentRows(students, boxes, all, sync, reload, lessonCount) {
   return h(
     'div.table-wrap',
     h(
       'table.table',
-      h('thead', h('tr', h('th', 'Pseudonym'), h('th', 'Benutzername'), h('th', 'Gürtel'), h('th', 'Übungen'), h('th', 'Ø Anschl./min'), h('th', 'Ø Fehler'), h('th', 'Zuletzt aktiv'), h('th', ''))),
+      h('thead', h('tr', h('th', all), h('th', 'Pseudonym'), h('th', 'Benutzername'), h('th', 'Gürtel'), h('th', 'Übungen'), h('th', 'Kurs'), h('th', 'Ø Anschl./min'), h('th', 'Ø Fehler'), h('th', 'Zuletzt aktiv'), h('th', ''))),
       h(
         'tbody',
         students.map((s) =>
           h(
             'tr',
+            h('td', (() => {
+              const b = h('input', { type: 'checkbox', 'aria-label': `${s.display_name} auswählen`, onchange: sync });
+              boxes.set(s.id, b);
+              return b;
+            })()),
             h('td', h('a', { href: `#/schueler/${s.id}` }, s.display_name)),
             h('td.mono', s.username),
             h('td', s.level.belt),
             h('td', s.runs),
+            h('td', `${s.lessons_passed}/${lessonCount}`),
             h('td', fmtNum(s.avg_apm)),
             h('td', s.avg_error_rate != null ? `${fmtNum(s.avg_error_rate, 1)} %` : '–'),
             h('td', fmtDate(s.last_active)),
@@ -362,7 +412,15 @@ export async function studentView(app, { id }) {
     h('p', h('button.link', { onclick: () => history.back() }, '← Zurück')),
     h('h1', s.displayName),
     h('p.muted.mono', s.username),
-    s.weakKeys.length ? h('p', 'Schwachstellen: ', s.weakKeys.map((w) => h('kbd', { title: `${w.rate} % Fehler bei ${w.total} Anschlägen` }, w.ch))) : null,
+    h('h2', 'Kurs'),
+    h(
+      'p',
+      `${s.course.filter((l) => l.passed).length} von ${s.course.length} Lektionen bestanden. `,
+      s.course.filter((l) => l.passed).map((l) => h('span.word-chip', l.title, ' ', stars(l.stars)))
+    ),
+    h('h2', 'Fehleranalyse'),
+    errorAnalysis(s.errors, { practice: false }),
+    h('h2', 'Ergebnisse'),
     s.results.length
       ? h(
           'div.table-wrap',

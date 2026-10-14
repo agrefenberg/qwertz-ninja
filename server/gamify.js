@@ -1,3 +1,6 @@
+import { LESSONS } from '../public/js/course.js';
+
+const LESSON_COUNT = LESSONS.length;
 // Level ("Gürtel") und Abzeichen.
 
 export const BELTS = ['Weiß', 'Gelb', 'Orange', 'Grün', 'Blau', 'Violett', 'Braun', 'Schwarz', 'Schwarz II', 'Schwarz III'];
@@ -26,13 +29,15 @@ export const BADGES = {
   ausdauer: { name: 'Ausdauer', desc: '10 Übungen abgeschlossen' },
   marathon: { name: 'Marathon', desc: '50 Übungen abgeschlossen' },
   schwachstellen: { name: 'Selbstkritisch', desc: '5 Schwachstellen-Übungen abgeschlossen' },
+  'kurs-halbzeit': { name: 'Halbzeit', desc: 'Die Hälfte des Kurses bestanden' },
+  'kurs-meister': { name: 'Meister', desc: 'Alle Kurslektionen bestanden' },
 };
 
 // Liefert die Abzeichen, die nach diesem Ergebnis neu verdient sind.
 export function newBadges(db, userId, result) {
   const have = new Set(db.prepare('SELECT badge FROM badges WHERE user_id = ?').all(userId).map((r) => r.badge));
   const counts = db
-    .prepare("SELECT COUNT(*) AS n, SUM(kind = 'weak') AS weak FROM results WHERE user_id = ? AND completed = 1")
+    .prepare("SELECT COUNT(*) AS n, SUM(kind = 'weak') AS weak, SUM(kind = 'focus') AS focus FROM results WHERE user_id = ? AND completed = 1")
     .get(userId);
   const earned = [];
   const add = (b, cond) => cond && !have.has(b) && earned.push(b);
@@ -45,7 +50,10 @@ export function newBadges(db, userId, result) {
   add('praezision', result.gross >= 300 && result.errorRate < 1);
   add('ausdauer', counts.n >= 10);
   add('marathon', counts.n >= 50);
-  add('schwachstellen', (counts.weak || 0) >= 5);
+  add('schwachstellen', (counts.weak || 0) + (counts.focus || 0) >= 5);
+  const passed = db.prepare('SELECT COUNT(*) AS n FROM course_progress WHERE user_id = ? AND passed_at IS NOT NULL').get(userId).n;
+  add('kurs-halbzeit', passed >= Math.ceil(LESSON_COUNT / 2));
+  add('kurs-meister', passed >= LESSON_COUNT);
 
   const ins = db.prepare('INSERT OR IGNORE INTO badges (user_id, badge, earned_at) VALUES (?, ?, ?)');
   for (const b of earned) ins.run(userId, b, Date.now());

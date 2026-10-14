@@ -29,7 +29,7 @@ export function purgeIfDue(db, now = new Date()) {
   return true;
 }
 
-// Löscht alle Leistungsdaten. Konten und Klassen bleiben bestehen.
+// Löscht alle Leistungsdaten (auch Kursfortschritt und Fehleranalyse). Konten und Klassen bleiben bestehen.
 export function purgeAll(db) {
   tx(db, () => {
     db.exec(`
@@ -37,6 +37,9 @@ export function purgeAll(db) {
       DELETE FROM test_attempts;
       DELETE FROM assignments;
       DELETE FROM key_stats;
+      DELETE FROM course_progress;
+      DELETE FROM error_pairs;
+      DELETE FROM error_words;
       DELETE FROM badges;
       UPDATE users SET xp = 0;
     `);

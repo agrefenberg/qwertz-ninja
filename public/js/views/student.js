@@ -1,9 +1,11 @@
 import { append, fmtDate, fmtDuration, fmtNum, get, h, patch, post, sparkline, toast } from '../ui.js';
 import { Trainer } from '../trainer.js';
-import { randomWords, weakExercise } from '../words.js';
+import { contrastExercise, randomWords, weakExercise, wordsExercise } from '../words.js';
+import { LESSONS, lessonById } from '../course.js';
+import { FINGER_NAMES, fingerFor } from '../layout.js';
 import { refreshMe, state } from '../app.js';
 
-const KIND_LABEL = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test' };
+const KIND_LABEL = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test', course: 'Kurs', focus: 'Fehlertraining' };
 
 function speed(r, metric = state.me.prefs.metric) {
   return metric === 'wpm' ? `${fmtNum(r.wpm)} WPM` : `${fmtNum(r.apm)} Anschl./min`;
@@ -29,7 +31,15 @@ export function beltCard(level) {
 export async function homeView(app) {
   await refreshMe();
   const me = state.me;
-  const [assignments, results, weak] = await Promise.all([get('/api/me/assignments'), get('/api/me/results'), get('/api/me/weak-keys')]);
+  const [assignments, results, weak, course, profile] = await Promise.all([
+    get('/api/me/assignments'),
+    get('/api/me/results'),
+    get('/api/me/weak-keys'),
+    get('/api/me/course'),
+    get('/api/me/errors'),
+  ]);
+  const tip = suggestion(course, profile);
+  const passedLessons = course.lessons.filter((l) => l.passed).length;
   const open = assignments.filter((a) => !a.done && (!a.due_at || a.due_at > Date.now()));
   const recent = results.slice(0, 30).reverse();
   const values = recent.map((r) => (me.prefs.metric === 'wpm' ? r.wpm : r.apm));
@@ -53,9 +63,12 @@ export async function homeView(app) {
           )
         )
       : null,
+    h('a.card.suggestion', { href: tip.href }, h('span.muted.small', 'Empfohlen für dich'), h('strong', tip.title), h('span.small', tip.text)),
     h('h2', 'Üben'),
     h(
       'div.tiles',
+      tile('#/kurs', 'Kurs', `${passedLessons} von ${course.lessons.length} Lektionen bestanden. Schritt für Schritt aufbauend.`),
+      tile('#/fehler', 'Meine Fehler', profile.confusions.length || profile.weakKeys.length ? 'Deine typischen Fehler und Übungen dazu.' : 'Wird nach ein paar Übungen gefüllt.'),
       tile('#/ueben/texte', 'Texte', 'Echte Texte mit Umlauten, ß und Satzzeichen.'),
       tile('#/ueben/woerter', 'Wörter', 'Zufällige Wörter aus der Wortliste.'),
       tile(
@@ -123,7 +136,7 @@ export async function practiceTextView(app, { id }) {
 }
 
 // Übung mit Trainer, Einstellungen und Auswertung. fixedErrorMode sperrt den Schalter (Aufgaben).
-export function runPractice(app, { title, subtitle, kind, makeText, assignmentId = null, fixedErrorMode = null, back = '#/' }) {
+export function runPractice(app, { title, subtitle, kind, makeText, assignmentId = null, fixedErrorMode = null, back = '#/', extra = {} }) {
   const prefs = state.me.prefs;
   let errorMode = fixedErrorMode || prefs.errorMode;
   let showKeyboard = prefs.keyboard;
@@ -171,7 +184,7 @@ export function runPractice(app, { title, subtitle, kind, makeText, assignmentId
 
   async function finish(r) {
     try {
-      const res = await post('/api/results', { kind: assignmentId ? 'exercise' : kind, assignmentId, ...r });
+      const res = await post('/api/results', { kind: assignmentId ? 'exercise' : kind, assignmentId, ...extra, ...r });
       holder.replaceChildren(resultPanel(res, r, { again: start, back }));
     } catch (e) {
       toast(e.message, 'error');
@@ -207,11 +220,215 @@ export function resultPanel(res, raw, { again, back, test = false }) {
       stat(fmtDuration(raw.durationMs ?? res.durationMs), 'Dauer')
     ),
     test && raw.correctedErrors ? h('p.muted.small', `${raw.correctedErrors} Fehler hast du selbst korrigiert; sie zählen nicht.`) : null,
+    res.course ? courseOutcome(res.course) : null,
     res.xpGain ? h('p', `+${res.xpGain} Punkte`) : null,
     res.levelUp ? h('p.highlight', `Neuer Gürtel: ${res.level.belt}! (Level ${res.level.level})`) : null,
     res.newBadges?.length ? h('div', h('p', 'Neue Abzeichen:'), h('div.badges', res.newBadges.map((b) => h('div.badge.earned', h('span.badge-icon', '★'), h('strong', b.name), h('span.small', b.desc))))) : null,
     h('div.toolbar', again ? h('button.primary', { onclick: again }, 'Nochmal') : null, h('a.button', { href: back }, 'Zurück'))
   );
+}
+
+function courseOutcome(c) {
+  if (!c.passed) {
+    return h('p.notice', `Noch nicht bestanden: Für die nächste Lektion brauchst du höchstens ${c.passErrorRate} % Fehler. Lass dir Zeit, Genauigkeit geht vor Tempo.`);
+  }
+  return h(
+    'div',
+    h('p.highlight', `${'★'.repeat(c.stars)}${'☆'.repeat(3 - c.stars)} Lektion bestanden!`),
+    c.newlyPassed && c.next ? h('p', h('a.button.primary', { href: `#/kurs/${c.next.id}` }, `Weiter: ${c.next.title}`)) : null,
+    c.newlyPassed && !c.next ? h('p', 'Du hast den ganzen Kurs geschafft!') : null
+  );
+}
+
+export function stars(n) {
+  return h('span.stars', { 'aria-label': `${n} von 3 Sternen` }, '★'.repeat(n), h('span.stars-off', '☆'.repeat(3 - n)));
+}
+
+// ---------- Kurs ----------
+
+export async function courseView(app) {
+  const { lessons, passErrorRate } = await get('/api/me/course');
+  const done = lessons.filter((l) => l.passed).length;
+  append(
+    app,
+    h('p', h('a', { href: '#/' }, '← Zurück')),
+    h('h1', 'Kurs'),
+    h('p.muted', `Die Lektionen bauen aufeinander auf. Mit höchstens ${passErrorRate} % Fehlern ist eine Lektion bestanden und die nächste wird frei. Für mehr Sterne zählt dann auch das Tempo.`),
+    h('p', `${done} von ${lessons.length} Lektionen bestanden`),
+    h(
+      'ol.lessons',
+      lessons.map((l, i) =>
+        h(
+          'li',
+          { class: l.passed ? 'passed' : l.unlocked ? 'open' : 'locked' },
+          h('span.lesson-no', String(i + 1)),
+          h(
+            'div.lesson-body',
+            l.unlocked ? h('a', { href: `#/kurs/${l.id}` }, h('strong', l.title)) : h('strong', l.title),
+            h('span.muted.small', l.goal)
+          ),
+          h('div.lesson-meta', l.passed ? stars(l.stars) : l.unlocked ? h('span.tag', 'offen') : h('span.muted.small', 'gesperrt'), l.bestApm ? h('span.muted.small', `${fmtNum(l.bestApm)} Anschl./min`) : null)
+        )
+      )
+    )
+  );
+}
+
+export async function lessonView(app, { id }) {
+  const lesson = lessonById(id);
+  if (!lesson) return (location.hash = '#/kurs');
+  const { lessons } = await get('/api/me/course');
+  const info = lessons.find((l) => l.id === id);
+  if (!info.unlocked) {
+    append(app, h('p', h('a', { href: '#/kurs' }, '← Zurück')), h('h1', lesson.title), h('p.muted', 'Diese Lektion wird frei, sobald du die vorherige bestanden hast.'));
+    return;
+  }
+  const no = LESSONS.indexOf(lesson) + 1;
+  return runPractice(app, {
+    title: `Lektion ${no}: ${lesson.title}`,
+    subtitle: lesson.goal,
+    kind: 'course',
+    extra: { lessonId: lesson.id },
+    makeText: lesson.make,
+    back: '#/kurs',
+  });
+}
+
+// ---------- Fehleranalyse ----------
+
+export function confusionHint(expected, typed) {
+  const show = (c) => (c === ' ' ? 'Leertaste' : `„${c}“`);
+  if (expected === ' ') return 'Leerzeichen fehlt: Wortende abwarten, dann mit dem Daumen.';
+  if (typed === ' ') return 'Leerzeichen zu früh: das Wort erst fertig schreiben.';
+  if (expected.toLowerCase() === typed.toLowerCase()) return 'Groß- und Kleinschreibung: Umschalttaste mit dem kleinen Finger der anderen Hand.';
+  const fe = fingerFor(expected);
+  const ft = fingerFor(typed);
+  if (!fe || !ft) return `${show(typed)} statt ${show(expected)}.`;
+  if (fe === ft) return `Gleicher Finger (${FINGER_NAMES[fe]}), andere Taste: auf den Weg aus der Grundstellung achten.`;
+  if (fe[0] === ft[0]) return `Benachbarte Finger: ${show(expected)} tippt der ${FINGER_NAMES[fe].replace(/er (?=.*finger)/gi, 'e ')}.`;
+  return `Hände vertauscht: ${show(expected)} tippt der ${FINGER_NAMES[fe].replace(/er (?=.*finger)/gi, 'e ')}.`;
+}
+
+export function errorAnalysis(profile, { practice = true } = {}) {
+  const { weakKeys, confusions, words } = profile;
+  if (!weakKeys.length && !confusions.length && !words.length) {
+    return h('p.muted', 'Noch zu wenig Daten. Nach ein paar Übungen siehst du hier deine typischen Fehler.');
+  }
+  const showCh = (c) => h('kbd', c === ' ' ? '␣' : c);
+  return h(
+    'div.analysis',
+    weakKeys.length
+      ? h(
+          'section.card',
+          h('h2', 'Schwache Tasten'),
+          h(
+            'ul.list',
+            weakKeys.map((k) =>
+              h(
+                'li',
+                showCh(k.ch),
+                bar(k.rate, Math.max(...weakKeys.map((x) => x.rate))),
+                h('span', `${fmtNum(k.rate, 1)} % Fehler`),
+                h('span.muted.small', `${k.total} Anschläge · ${FINGER_NAMES[fingerFor(k.ch)] || ''}`)
+              )
+            )
+          ),
+          practice ? h('a.button.primary', { href: `#/ueben/fokus/${encodeURIComponent(weakKeys.slice(0, 5).map((k) => k.ch).join(''))}` }, 'Diese Tasten gezielt üben') : null
+        )
+      : null,
+    confusions.length
+      ? h(
+          'section.card',
+          h('h2', 'Typische Verwechslungen'),
+          h(
+            'ul.list',
+            confusions.map((c) =>
+              h(
+                'li',
+                h('span', showCh(c.typed), ' statt ', showCh(c.expected)),
+                h('span.muted.small', `${c.count}×`),
+                h('span.small', confusionHint(c.expected, c.typed)),
+                practice ? h('a.button.small', { href: `#/ueben/verwechslung/${encodeURIComponent(c.expected + c.typed)}` }, 'Üben') : null
+              )
+            )
+          )
+        )
+      : null,
+    words.length
+      ? h(
+          'section.card',
+          h('h2', 'Oft verschriebene Wörter'),
+          h('p', words.map((w) => h('span.word-chip', w.word, h('span.muted.small', ` ${w.count}×`)))),
+          practice ? h('a.button.primary', { href: '#/ueben/fehlerwoerter' }, 'Diese Wörter üben') : null
+        )
+      : null
+  );
+}
+
+function bar(value, max) {
+  const fill = h('div.bar-fill');
+  fill.style.width = `${(value / (max || 1)) * 100}%`;
+  return h('div.bar', fill);
+}
+
+export async function errorsView(app) {
+  const profile = await get('/api/me/errors');
+  const el = errorAnalysis(profile);
+  append(
+    app,
+    h('h1', 'Meine Fehler'),
+    h('p.muted', 'QWERTZ Ninja merkt sich, wo du dich vertippst. Daraus entstehen Übungen, die genau deine typischen Fehler trainieren.'),
+    el
+  );
+}
+
+export async function focusView(app, { chars }) {
+  const keys = Array.from(chars);
+  return runPractice(app, {
+    title: 'Fehlertraining: Tasten',
+    subtitle: h('span', 'Im Fokus: ', keys.map((c) => h('kbd', c))),
+    kind: 'focus',
+    makeText: () => weakExercise(keys, 40),
+    back: '#/fehler',
+  });
+}
+
+export async function contrastView(app, { pair }) {
+  const [expected, typed] = Array.from(pair);
+  return runPractice(app, {
+    title: 'Fehlertraining: Verwechslung',
+    subtitle: confusionHint(expected, typed ?? ''),
+    kind: 'focus',
+    makeText: () => contrastExercise(expected, typed ?? ''),
+    back: '#/fehler',
+  });
+}
+
+export async function errorWordsView(app) {
+  const { words } = await get('/api/me/errors');
+  if (!words.length) return (location.hash = '#/fehler');
+  return runPractice(app, {
+    title: 'Fehlertraining: Wörter',
+    subtitle: 'Deine oft verschriebenen Wörter, mehrfach gemischt.',
+    kind: 'focus',
+    makeText: () => wordsExercise(words.map((w) => w.word)),
+    back: '#/fehler',
+  });
+}
+
+// Ein persönlicher Vorschlag für die nächste Übung.
+function suggestion(course, profile) {
+  const next = course.lessons.find((l) => l.unlocked && !l.passed);
+  if (profile.confusions[0]?.count >= 5) {
+    const c = profile.confusions[0];
+    return { href: `#/ueben/verwechslung/${encodeURIComponent(c.expected + c.typed)}`, title: 'Typische Verwechslung trainieren', text: confusionHint(c.expected, c.typed) };
+  }
+  if (next) return { href: `#/kurs/${next.id}`, title: `Weiter im Kurs: ${next.title}`, text: next.goal };
+  if (profile.weakKeys.length) {
+    const keys = profile.weakKeys.slice(0, 5).map((k) => k.ch).join('');
+    return { href: `#/ueben/fokus/${encodeURIComponent(keys)}`, title: 'Schwache Tasten üben', text: `Gezielt für ${Array.from(keys).join(' ')}` };
+  }
+  return { href: '#/ueben/texte', title: 'Einen Text schreiben', text: 'Ruhig und gleichmäßig, ohne hinzusehen.' };
 }
 
 function stat(value, label) {

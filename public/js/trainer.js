@@ -22,6 +22,9 @@ export class Trainer {
     this.keyStats = {};
     this.firstTry = new Set(); // Positionen, die schon einmal angeschlagen wurden
     this.missed = new Set(); // Positionen, an denen zuerst falsch getippt wurde (Korrekturmodus)
+    this.confusions = {}; // "erwartet\u0000getippt" → Anzahl
+    this.errorWords = {}; // Wort → Anzahl Fehler darin
+    this.wordAt = wordIndex(this.target);
     this.started = null;
     this.finished = false;
 
@@ -101,7 +104,10 @@ export class Trainer {
         let j = i;
         while (j < this.target.length && this.target[j] !== ' ') {
           const s = (this.keyStats[this.target[j]] ||= [0, 0]);
-          if (!this.firstTry.has(j)) s[1]++;
+          if (!this.firstTry.has(j)) {
+            s[1]++;
+            if (j === i) this.noteError(j, ' ');
+          }
           this.firstTry.add(j);
           this.typed.push(null);
           j++;
@@ -110,6 +116,7 @@ export class Trainer {
       } else {
         // Zu viele Buchstaben im Wort: Fehler, aber das Leerzeichen bleibt die nächste Taste.
         this.extraStrokes++;
+        this.noteError(i, ch);
         this.flash(i);
       }
       this.render(i);
@@ -125,6 +132,7 @@ export class Trainer {
     }
     if (!ok) {
       this.wrongStrokes++;
+      if (!this.missed.has(i)) this.noteError(i, ch);
       this.missed.add(i);
     }
 
@@ -136,6 +144,13 @@ export class Trainer {
     }
     this.render(i);
     if (this.cursor >= this.target.length) this.finish(true);
+  }
+
+  noteError(i, typed) {
+    const key = `${this.target[i]}\u0000${typed}`;
+    this.confusions[key] = (this.confusions[key] || 0) + 1;
+    const w = this.wordAt[i];
+    if (w) this.errorWords[w] = (this.errorWords[w] || 0) + 1;
   }
 
   backspace() {
@@ -238,6 +253,8 @@ export class Trainer {
       correctedErrors: this.correctedErrors,
       completed: completed || !!this.timeLimitMs,
       keyStats: this.keyStats,
+      confusions: Object.entries(this.confusions).map(([k, n]) => [...k.split('\u0000'), n]),
+      errorWords: this.errorWords,
       typed: this.typed.join(''),
     });
   }
@@ -247,4 +264,18 @@ export class Trainer {
     clearInterval(this.timer);
     this.el.remove();
   }
+}
+
+// Für jede Position das Wort, zu dem sie gehört (ohne Satzzeichen am Rand).
+function wordIndex(chars) {
+  const out = new Array(chars.length).fill(null);
+  let start = 0;
+  for (let i = 0; i <= chars.length; i++) {
+    if (i === chars.length || chars[i] === ' ') {
+      const word = chars.slice(start, i).join('').replace(/^[^\p{L}\d]+|[^\p{L}\d]+$/gu, '');
+      if (word.length >= 2) for (let j = start; j < i; j++) out[j] = word;
+      start = i + 1;
+    }
+  }
+  return out;
 }
