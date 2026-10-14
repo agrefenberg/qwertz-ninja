@@ -197,3 +197,23 @@ test('Löschung zum Schuljahresende', () => {
   assert.equal(d.prepare('SELECT COUNT(*) AS n FROM users').get().n, 1);
   assert.equal(purgeIfDue(d, new Date(2026, 7, 2)), false);
 });
+
+test('Demodaten anlegen und entfernen', async () => {
+  const { createDemo, removeDemo, hasDemo } = await import('../server/demo.js');
+  const d = openDb(':memory:');
+  d.prepare("INSERT INTO users (role, username, display_name, password_hash, created_at) VALUES ('teacher', 'echt', 'Echte Lehrkraft', 'x', 0)").run();
+  const t0 = Date.now();
+  const s = createDemo(d);
+  assert.ok(Date.now() - t0 < 20000);
+  assert.equal(s.teachers.length, 4);
+  assert.equal(s.classes, 7);
+  assert.ok(s.students > 130);
+  assert.ok(s.results > 1000);
+  assert.ok(hasDemo(d));
+  assert.ok(d.prepare('SELECT COUNT(*) AS n FROM badges').get().n > 100);
+  removeDemo(d);
+  assert.equal(hasDemo(d), false);
+  assert.equal(d.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'student'").get().n, 0);
+  assert.equal(d.prepare('SELECT COUNT(*) AS n FROM results').get().n, 0);
+  assert.equal(d.prepare("SELECT COUNT(*) AS n FROM users WHERE username = 'echt'").get().n, 1);
+});

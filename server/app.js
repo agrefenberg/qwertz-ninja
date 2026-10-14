@@ -16,6 +16,7 @@ import {
 import { BADGES, levelFor, newBadges } from './gamify.js';
 import { compareTyped, metrics, normalizeChar, normalizeText, suggestGrade } from '../public/js/scoring.js';
 import { nextPurgeDate } from './retention.js';
+import { createDemo, hasDemo, removeDemo, DEMO_PASSWORD } from './demo.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COUNTDOWN_MS = 3000;
@@ -740,6 +741,19 @@ export function createApp(db, { secureCookies = false } = {}) {
     setSetting(db, 'year_end', yearEnd);
     setSetting(db, 'privacy_note', privacyNote);
     res.json({ ok: true, nextPurge: nextPurgeDate(db).toISOString().slice(0, 10) });
+  });
+
+  app.get('/api/admin/demo', auth('admin'), (req, res) => {
+    res.json({ present: hasDemo(db), password: DEMO_PASSWORD });
+  });
+
+  app.post('/api/admin/demo', auth('admin'), (req, res) => {
+    if (req.body.action === 'remove') {
+      removeDemo(db);
+      return res.json({ present: false });
+    }
+    if (req.body.action !== 'create') throw bad('Unbekannte Aktion.');
+    res.json({ present: true, ...createDemo(db) });
   });
 
   // ---------- Fehlerbehandlung ----------

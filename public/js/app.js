@@ -118,9 +118,12 @@ export async function route() {
     for (const [pattern, view] of ROUTES[state.me.role]) {
       const params = match(pattern, path);
       if (params) {
-        app.replaceChildren();
+        // Jede Ansicht bekommt einen eigenen Container. Startet währenddessen eine neuere
+        // Navigation, hängt die alte Ansicht nur noch in einem abgelösten Container.
+        const container = h('div');
+        app.replaceChildren(container);
         window.scrollTo(0, 0);
-        return await view(app, params);
+        return await view(container, params);
       }
     }
     app.replaceChildren(h('h1', 'Seite nicht gefunden'), h('p', h('a', { href: '#/' }, 'Zur Startseite')));

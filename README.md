@@ -58,6 +58,20 @@ npm start
 
 Umgebungsvariablen: `PORT` (Standard 3000), `DB_FILE` (Standard `./data/qwertz-ninja.sqlite`), `SECURE_COOKIES=1` hinter HTTPS.
 
+### Aktualisieren
+
+Neue Zip-Datei in denselben Ordner entpacken (der Ordner `data` bleibt dabei erhalten) und neu bauen:
+
+```sh
+unzip -o qwertz-ninja.zip -d qwertz-ninja
+cd qwertz-ninja
+docker compose up -d --build
+```
+
+### Demodaten
+
+Unter Admin › Einstellungen lassen sich Demodaten anlegen und wieder entfernen: vier Demo-Lehrkräfte (`demo-huber`, `demo-maier`, `demo-yilmaz`, `demo-schmid`), sieben Klassen, rund 170 Schülerkonten mit mehreren Wochen Ergebnissen. Passwort für alle Demo-Konten: `ninja-demo`. Echte Konten bleiben unberührt.
+
 ### Sicherung
 
 Es genügt, den Ordner `data` zu sichern. Für eine konsistente Kopie im laufenden Betrieb: `sqlite3 data/qwertz-ninja.sqlite ".backup sicherung.sqlite"`.

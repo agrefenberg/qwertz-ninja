@@ -116,5 +116,55 @@ export async function settingsView(app) {
     h('button.primary', { type: 'submit' }, 'Speichern')
   );
   const next = h('strong', new Date(s.nextPurge).toLocaleDateString('de-DE'));
-  append(app, h('h1', 'Einstellungen'), h('p', 'Nächste automatische Löschung: ', next), form);
+  append(app, h('h1', 'Einstellungen'), h('p', 'Nächste automatische Löschung: ', next), form, await demoSection());
+}
+
+async function demoSection() {
+  const box = h('section.card');
+  const render = (demo, info = null) => {
+    const run = (action, msg) => async (e) => {
+      if (action === 'remove' && !confirm('Alle Demo-Lehrkräfte mit ihren Klassen, Schülerkonten und Ergebnissen löschen?')) return;
+      e.target.disabled = true;
+      e.target.textContent = action === 'create' ? 'Wird angelegt …' : 'Wird entfernt …';
+      try {
+        const res = await post('/api/admin/demo', { action });
+        render({ ...demo, present: res.present }, action === 'create' ? res : null);
+        toast(msg);
+      } catch (err) {
+        toast(err.message, 'error');
+        e.target.disabled = false;
+      }
+    };
+    box.replaceChildren(
+      h('h2', 'Demodaten'),
+      h(
+        'p.muted.small',
+        'Legt vier Demo-Lehrkräfte mit sieben Klassen, rund 170 Schülerkonten und mehreren Wochen Übungs- und Testergebnissen an. Echte Konten bleiben unberührt. Demodaten lassen sich jederzeit wieder entfernen.'
+      ),
+      demo.present
+        ? h(
+            'div',
+            h(
+              'p',
+              'Demodaten sind vorhanden. Anmelden zum Beispiel als ',
+              h('b.mono', 'demo-huber'),
+              ', ',
+              h('b.mono', 'demo-maier'),
+              ', ',
+              h('b.mono', 'demo-yilmaz'),
+              ' oder ',
+              h('b.mono', 'demo-schmid'),
+              '. Passwort für alle Demo-Konten, auch die der Schüler: ',
+              h('b.mono', demo.password),
+              '.'
+            ),
+            info?.sampleStudents?.length ? h('p', 'Beispiel-Schülerkonten: ', info.sampleStudents.map((u, i) => [i ? ', ' : '', h('b.mono', u)])) : null,
+            info ? h('p.muted.small', `${info.classes} Klassen, ${info.students} Schülerkonten, ${info.results} Ergebnisse angelegt.`) : null,
+            h('div.toolbar', h('button', { onclick: run('create', 'Demodaten neu angelegt') }, 'Neu erzeugen'), h('button.danger', { onclick: run('remove', 'Demodaten entfernt') }, 'Demodaten entfernen'))
+          )
+        : h('button.primary', { onclick: run('create', 'Demodaten angelegt') }, 'Demodaten anlegen')
+    );
+  };
+  render(await get('/api/admin/demo'));
+  return box;
 }
