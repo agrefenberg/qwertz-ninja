@@ -94,6 +94,30 @@ CREATE TABLE IF NOT EXISTS test_attempts (
   PRIMARY KEY (user_id, assignment_id)
 );
 
+CREATE TABLE IF NOT EXISTS plns (
+  id INTEGER PRIMARY KEY,
+  class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  text TEXT NOT NULL,
+  sources TEXT NOT NULL DEFAULT '[]',
+  format TEXT NOT NULL DEFAULT 'lines',
+  return_rule TEXT NOT NULL DEFAULT 'first',
+  grading_scheme_id INTEGER REFERENCES grading_schemes(id) ON DELETE SET NULL,
+  note1_chars INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pln_attempts (
+  pln_id INTEGER NOT NULL REFERENCES plns(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  started_at INTEGER NOT NULL,
+  typed TEXT NOT NULL DEFAULT '',
+  saved_at INTEGER,
+  submitted_at INTEGER,
+  PRIMARY KEY (pln_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS key_stats (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   ch TEXT NOT NULL,

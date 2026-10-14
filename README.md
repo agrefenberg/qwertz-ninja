@@ -7,7 +7,7 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 - **Lernende:** geführte Wiederholung der Grundstellung beim ersten Anmelden, Übungen mit Texten, Wortlisten und automatisch erzeugten Schwachstellen-Übungen, Bildschirmtastatur mit Fingerfarben, Fehlermodus wählbar (weitertippen oder korrigieren), Anschläge/min und WPM umschaltbar, Gürtel-Level, Abzeichen, Rangliste (wenn freigegeben).
 - **Kurs:** 16 aufeinander aufbauende Lektionen von der Grundreihe bis zur Abschlussprüfung. Bestanden mit höchstens 3 % Fehlern, dann wird die nächste frei; Sterne für Tempo.
 - **Persönliche Fehleranalyse:** Die App merkt sich schwache Tasten, typische Verwechslungen (z. B. „ä statt ö“) und oft verschriebene Wörter, zeigt sie unter „Fehler“ und erzeugt passende Übungen. Lehrkräfte sehen die Analyse in der Schüleransicht.
-- **Lehrkräfte:** Klassen anlegen, Schülerzugänge als Schneideliste drucken (jederzeit erneut für alle oder ausgewählte Schüler, dabei werden neue Passwörter vergeben), Übungen mit Frist und Tests mit Zeitlimit zuweisen, Notenschlüssel mit Notenvorschlag, eigene Texte, Ergebnisse pro Klasse, Aufgabe und Schüler, CSV-Export.
+- **Lehrkräfte:** Klassen anlegen, Schülerzugänge als Schneideliste drucken (jederzeit erneut für alle oder ausgewählte Schüler, dabei werden neue Passwörter vergeben), Übungen mit Frist und Tests mit Zeitlimit zuweisen, Notenschlüssel mit Notenvorschlag, PLN (Praktischer Leistungsnachweis, 10-Minuten-Abschrift) mit Druckvorlage und PDF aller Abschriften, eigene Texte, Ergebnisse pro Klasse, Aufgabe und Schüler, CSV-Export.
 - **Admin:** Lehrkräfte anlegen, Passwörter zurücksetzen, Schulname, Schuljahresende, Datenschutzhinweis.
 
 ### Bewertung
@@ -16,6 +16,14 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 - **Tests:** Korrigieren mit der Rücktaste ist erlaubt. Gewertet wird nur der Endstand, korrigierte Fehler zählen also nicht. Fehler werden als Editierdistanz gezählt: Ein ausgelassener oder doppelter Buchstabe ist ein Fehler und verschiebt nicht den Rest des Textes.
 - **Notenschlüssel:** Mindestzahl Netto-Anschläge pro Minute für die Noten 1 bis 5, optional mit Abzug je Fehler. Die App schlägt die Note nur vor.
 - Die Startzeit eines Tests misst der Server. Jeder Test hat einen Versuch, den die Lehrkraft zurücksetzen kann.
+
+### PLN: 10-Minuten-Abschrift
+
+- Die Lehrkraft legt in der Klasse einen PLN an: Notenschlüssel, Ausgangstext (die App ergänzt weitere Texte, bis der Text für 10 Minuten reicht), Vorlage mit Zeilen- und Anschlagsangaben oder als normaler Fließtext, Regel für die Returntaste.
+- Die Druckvorlage (12 Punkt, eineinhalbfacher Zeilenabstand) enthält immer den Hinweis „Es ist ein Fließtext im Zehn-Finger-System zu schreiben“ und eine Markierung, bis wohin für die Note 1 getippt werden muss.
+- Nach der Freigabe startet jede Schülerin und jeder Schüler selbst und schreibt 10 Minuten lang, ohne den Text am Bildschirm zu sehen. Der Stand wird alle 10 Sekunden zwischengespeichert und nach 10 Minuten unverändert festgehalten.
+- Wertung: zwei Tippfehler in einem Wort zählen als ein Fehler (alle werden markiert), in der letzten Sinneinheit wird kein Fehler gewertet, Returntaste je nach Einstellung. Anschläge sind alle geschriebenen Zeichen; der Notenvorschlag nutzt den Notenschlüssel (Mindest-Anschläge pro Minute, Abzug je Fehler).
+- Die Lehrkraft lädt alle Abschriften als ein PDF herunter: je Person eine Seite mit Pseudonym, Datum und Uhrzeit, unverändertem Text mit markierten Fehlern und Fehlerliste.
 
 ### Datenschutz
 

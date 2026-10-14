@@ -4,6 +4,7 @@ import * as student from './views/student.js';
 import { basicsView } from './views/basics.js';
 import * as teacher from './views/teacher.js';
 import * as admin from './views/admin.js';
+import { plnSheetView, plnView, studentPlnView } from './views/pln.js';
 
 export const state = { me: null, setup: null, cleanup: null };
 
@@ -19,6 +20,7 @@ const ROUTES = {
     ['/kurs/:id', student.lessonView],
     ['/fehler', student.errorsView],
     ['/aufgabe/:id', student.assignmentView],
+    ['/pln/:id', studentPlnView],
     ['/grundstellung', basicsView],
     ['/rangliste', student.leaderboardView],
     ['/verlauf', student.historyView],
@@ -28,6 +30,8 @@ const ROUTES = {
     ['/', teacher.classesView],
     ['/klasse/:id', teacher.classView],
     ['/aufgabe/:id', teacher.assignmentResultsView],
+    ['/pln/:id', plnView],
+    ['/pln/:id/vorlage', plnSheetView],
     ['/schueler/:id', teacher.studentView],
     ['/texte', teacher.textsView],
     ['/notenschluessel', teacher.schemesView],

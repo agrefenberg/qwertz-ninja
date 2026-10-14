@@ -1169,6 +1169,203 @@ kbd {
   }
 }
 
+
+/* ---------- PLN ---------- */
+
+.tag-pln {
+  background: var(--ink);
+  color: #fff;
+}
+.pln-kicker {
+  display: inline-block;
+  margin: 0;
+  padding: 0.2rem 0.8rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: -0.25rem 0 1.25rem;
+}
+.chip {
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+.steps {
+  margin: 0 0 1rem;
+  padding-left: 1.3rem;
+}
+.steps li {
+  margin-bottom: 0.35rem;
+}
+.pln-card {
+  background: var(--ink);
+  color: #fff;
+}
+.pln-card::after {
+  border-color: #fff;
+  background-color: var(--yellow);
+}
+.pln-card .pill-label {
+  background: var(--coral);
+  color: var(--ink);
+}
+.pln-card strong {
+  font-size: 1.35rem;
+}
+.pln-card .go {
+  border-color: #fff;
+  color: #fff;
+}
+.pln-intro ul {
+  padding-left: 1.2rem;
+  line-height: 1.8;
+}
+button.big {
+  padding: 0.85rem 1.8rem;
+  font-size: 1.1rem;
+  margin-top: 0.5rem;
+}
+.pln-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.pln-clock {
+  font-size: 2.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  padding: 0.1rem 1.1rem;
+  border-radius: 20px;
+  background: var(--ink);
+  color: var(--yellow);
+}
+.pln-clock-low {
+  background: var(--coral);
+  color: var(--ink);
+}
+.pln-stage {
+  position: relative;
+}
+textarea.pln-area {
+  display: block;
+  width: 100%;
+  min-height: 55vh;
+  margin: 0;
+  padding: 1.25rem 1.5rem;
+  border: 0;
+  border-radius: 28px;
+  background: var(--surface);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 1.25rem;
+  line-height: 1.8;
+  resize: vertical;
+}
+textarea.pln-area:focus {
+  box-shadow: inset 0 0 0 3px var(--ink);
+}
+.pln-countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(3px);
+  font-size: 1.4rem;
+  font-weight: 700;
+  text-align: center;
+}
+.pln-countdown:empty {
+  display: none;
+}
+.pln-countdown span {
+  font-size: 1rem;
+  font-weight: 500;
+}
+.pln-done {
+  background: var(--green);
+}
+
+/* Druckvorlage */
+.pln-sheet {
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 2rem 2.25rem;
+  font-size: 12pt;
+  line-height: 1.5;
+  color: #000;
+}
+.pln-sheet h1 {
+  font-size: 15pt;
+  margin: 0 0 0.2rem;
+}
+.pln-meta {
+  margin: 0;
+  color: #444;
+}
+.pln-fill {
+  margin: 0.8rem 0;
+}
+.pln-hints {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+}
+.mark1 {
+  display: inline-block;
+  margin: 0 0.25em;
+  padding: 0 0.35em;
+  border: 1.5px solid #000;
+  border-radius: 4px;
+  font-size: 0.75em;
+  font-weight: 800;
+  line-height: 1.3;
+  vertical-align: 0.1em;
+  white-space: nowrap;
+}
+.pln-plain {
+  font-size: 12pt;
+  line-height: 1.5;
+  margin: 0;
+}
+.pln-lines {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12pt;
+  line-height: 1.5;
+}
+.pln-lines th {
+  font-size: 9pt;
+  text-align: left;
+  color: #555;
+  border-bottom: 1px solid #999;
+}
+.pln-lines td {
+  padding: 0 0.4rem;
+  vertical-align: top;
+}
+.pln-lines td.no {
+  width: 3.5rem;
+  text-align: right;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+}
+.pln-lines td.txt {
+  white-space: nowrap;
+}
+
 /* ---------- Druckliste mit Zugangsdaten ---------- */
 
 .print-sheet {
@@ -1221,6 +1418,19 @@ kbd {
   body:has(.print-sheet) .container {
     padding: 0;
     max-width: none;
+  }
+  /* PLN-Vorlage: nur das Blatt drucken */
+  body:has(.pln-sheet) .topbar,
+  body:has(.pln-sheet) .no-print {
+    display: none !important;
+  }
+  body:has(.pln-sheet) .container {
+    padding: 0;
+    max-width: none;
+  }
+  .pln-sheet {
+    padding: 0;
+    border-radius: 0;
   }
   .toast {
     display: none !important;

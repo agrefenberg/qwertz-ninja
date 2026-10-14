@@ -17,6 +17,8 @@ import { BADGES, levelFor, newBadges } from './gamify.js';
 import { compareTyped, metrics, normalizeChar, normalizeText, suggestGrade } from '../public/js/scoring.js';
 import { nextPurgeDate } from './retention.js';
 import { createDemo, hasDemo, removeDemo, DEMO_PASSWORD } from './demo.js';
+import { composeText, evaluatePln, gradePln, note1Chars, note1Position, PLN_DURATION_MS, PLN_GRACE_MS, PLN_MAX_CHARS, PLN_TITLE } from './pln.js';
+import { writePlnPdf } from './pln-pdf.js';
 import { LESSONS, lessonById, starsFor, PASS_ERROR_RATE } from '../public/js/course.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -859,6 +861,191 @@ export function createApp(db, { secureCookies = false } = {}) {
     }
     if (req.body.action !== 'create') throw bad('Unbekannte Aktion.');
     res.json({ present: true, ...createDemo(db) });
+  });
+
+  // ---------- PLN: 10-Minuten-Abschrift ----------
+
+  const plnEnded = (a, now = Date.now()) => !!a && (!!a.submitted_at || now > a.started_at + PLN_DURATION_MS + PLN_GRACE_MS);
+  const schemeOf = (id) => {
+    const s = id && db.prepare('SELECT * FROM grading_schemes WHERE id = ?').get(id);
+    return s ? { ...s, thresholds: JSON.parse(s.thresholds) } : null;
+  };
+
+  function ownPln(req) {
+    const p = db.prepare('SELECT p.* FROM plns p JOIN classes c ON c.id = p.class_id WHERE p.id = ? AND c.teacher_id = ?').get(int(req.params.id), req.user.id);
+    if (!p) throw notFound();
+    return p;
+  }
+
+  app.get('/api/classes/:id/plns', auth('teacher'), (req, res) => {
+    const cls = ownClass(req);
+    const rows = db
+      .prepare(
+        `SELECT p.id, p.title, p.format, p.return_rule, p.status, p.created_at, p.note1_chars, g.name AS scheme_name,
+           (SELECT COUNT(*) FROM pln_attempts a WHERE a.pln_id = p.id) AS started
+         FROM plns p LEFT JOIN grading_schemes g ON g.id = p.grading_scheme_id WHERE p.class_id = ? ORDER BY p.created_at DESC`
+      )
+      .all(cls.id);
+    res.json(rows);
+  });
+
+  app.post('/api/classes/:id/plns', auth('teacher'), (req, res) => {
+    const cls = ownClass(req);
+    const b = req.body;
+    const title = str(b.title, { max: 120, name: 'Titel' });
+    const schemeId = int(b.gradingSchemeId, { min: 1, name: 'Notenschlüssel' });
+    const scheme = db.prepare('SELECT * FROM grading_schemes WHERE id = ? AND teacher_id = ?').get(schemeId, req.user.id);
+    if (!scheme) throw bad('Bitte einen Notenschlüssel wählen. Er bestimmt, wie weit für die Note 1 getippt werden muss.');
+    const textId = int(b.textId, { min: 1, name: 'Text' });
+    const visible = visibleTextsFor(req.user);
+    if (!visible.some((t) => t.id === textId)) throw bad('Text nicht gefunden.');
+    const format = b.format === 'plain' ? 'plain' : 'lines';
+    const returnRule = b.returnRule === 'each' ? 'each' : 'first';
+    const n1 = note1Chars(scheme);
+    const all = db.prepare('SELECT id, title, content, builtin_key FROM texts WHERE owner_id IS NULL OR owner_id = ?').all(req.user.id);
+    const start = all.find((t) => t.id === textId);
+    // Lange Texte zuerst, dann der Rest in fester Reihenfolge.
+    const others = all.filter((t) => t.id !== textId).sort((x, y) => y.content.length - x.content.length || x.id - y.id);
+    const { text, sources } = composeText(start, others, Math.ceil(n1 * 1.25) + 300);
+    const r = db
+      .prepare('INSERT INTO plns (class_id, title, text, sources, format, return_rule, grading_scheme_id, note1_chars, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(cls.id, title, text, JSON.stringify(sources), format, returnRule, scheme.id, n1, 'draft', Date.now());
+    res.json({ id: Number(r.lastInsertRowid) });
+  });
+
+  app.get('/api/plns/:id', auth('teacher'), (req, res) => {
+    const p = ownPln(req);
+    const cls = db.prepare('SELECT * FROM classes WHERE id = ?').get(p.class_id);
+    const scheme = schemeOf(p.grading_scheme_id);
+    const now = Date.now();
+    const rows = db
+      .prepare(
+        `SELECT u.id AS user_id, u.display_name, u.username, a.started_at, a.saved_at, a.submitted_at, a.typed
+         FROM users u LEFT JOIN pln_attempts a ON a.user_id = u.id AND a.pln_id = ?
+         WHERE u.class_id = ? AND u.role = 'student' ORDER BY u.display_name`
+      )
+      .all(p.id, p.class_id);
+    res.json({
+      pln: { ...p, sources: JSON.parse(p.sources), note1_pos: note1Position(p.text, p.note1_chars), className: cls.name, scheme },
+      schoolName: getSetting(db, 'school_name', ''),
+      rows: rows.map(({ typed, ...r }) => {
+        const attempt = r.started_at ? { ...r } : null;
+        const ended = plnEnded(attempt, now);
+        const ev = ended ? evaluatePln(p.text, typed, p.return_rule) : null;
+        return {
+          ...r,
+          state: !attempt ? 'none' : ended ? 'done' : 'running',
+          gross: ev?.gross ?? null,
+          errors: ev?.errors ?? null,
+          grade: ev ? gradePln(scheme, ev) : null,
+        };
+      }),
+    });
+  });
+
+  app.patch('/api/plns/:id', auth('teacher'), (req, res) => {
+    const p = ownPln(req);
+    const status = ['draft', 'open', 'closed'].includes(req.body.status) ? req.body.status : null;
+    if (!status) throw bad('Unbekannter Status.');
+    db.prepare('UPDATE plns SET status = ? WHERE id = ?').run(status, p.id);
+    res.json({ ok: true });
+  });
+
+  app.delete('/api/plns/:id', auth('teacher'), (req, res) => {
+    const p = ownPln(req);
+    db.prepare('DELETE FROM plns WHERE id = ?').run(p.id);
+    res.json({ ok: true });
+  });
+
+  app.delete('/api/plns/:id/attempts/:userId', auth('teacher'), (req, res) => {
+    const p = ownPln(req);
+    db.prepare('DELETE FROM pln_attempts WHERE pln_id = ? AND user_id = ?').run(p.id, int(req.params.userId));
+    res.json({ ok: true });
+  });
+
+  app.get('/api/plns/:id/abschriften.pdf', auth('teacher'), (req, res) => {
+    const p = ownPln(req);
+    const cls = db.prepare('SELECT * FROM classes WHERE id = ?').get(p.class_id);
+    const scheme = schemeOf(p.grading_scheme_id);
+    const now = Date.now();
+    const entries = db
+      .prepare(
+        `SELECT u.display_name, u.username, a.started_at, a.submitted_at, a.typed FROM pln_attempts a JOIN users u ON u.id = a.user_id
+         WHERE a.pln_id = ? ORDER BY u.display_name`
+      )
+      .all(p.id)
+      .filter((a) => plnEnded(a, now))
+      .map((a) => {
+        const ev = evaluatePln(p.text, a.typed, p.return_rule);
+        return { student: { display_name: a.display_name, username: a.username }, attempt: a, ev, grade: gradePln(scheme, ev) };
+      });
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `attachment; filename="pln-${slugify(cls.name)}-${slugify(p.title)}.pdf"`);
+    writePlnPdf(res, { school: getSetting(db, 'school_name', ''), className: cls.name, pln: p, scheme, entries });
+  });
+
+  // Sicht der Lernenden: Der Text liegt auf Papier vor, am Bildschirm wird nur geschrieben.
+  function studentPln(req) {
+    const p = db.prepare('SELECT * FROM plns WHERE id = ? AND class_id = ?').get(int(req.params.id), req.user.class_id ?? -1);
+    if (!p) throw notFound();
+    return p;
+  }
+
+  function plnState(p, userId) {
+    const a = db.prepare('SELECT * FROM pln_attempts WHERE pln_id = ? AND user_id = ?').get(p.id, userId);
+    const now = Date.now();
+    return {
+      id: p.id,
+      title: p.title,
+      heading: PLN_TITLE,
+      status: p.status,
+      returnRule: p.return_rule,
+      durationMs: PLN_DURATION_MS,
+      serverNow: now,
+      startedAt: a?.started_at ?? null,
+      ended: plnEnded(a, now),
+      typed: a && !plnEnded(a, now) ? a.typed : null,
+    };
+  }
+
+  app.get('/api/me/plns', auth('student'), (req, res) => {
+    const rows = db
+      .prepare(
+        `SELECT p.id, p.title, p.status, a.started_at, a.submitted_at FROM plns p
+         LEFT JOIN pln_attempts a ON a.pln_id = p.id AND a.user_id = ?
+         WHERE p.class_id = ? AND (p.status = 'open' OR a.started_at IS NOT NULL) ORDER BY p.created_at DESC`
+      )
+      .all(req.user.id, req.user.class_id ?? -1);
+    res.json(rows.map((r) => ({ id: r.id, title: r.title, status: r.status, done: plnEnded(r.started_at ? r : null) })));
+  });
+
+  app.get('/api/me/plns/:id', auth('student'), (req, res) => {
+    res.json(plnState(studentPln(req), req.user.id));
+  });
+
+  app.post('/api/me/plns/:id/start', auth('student'), (req, res) => {
+    const p = studentPln(req);
+    if (p.status !== 'open') throw bad('Der PLN ist nicht freigegeben. Warte auf deine Lehrkraft.');
+    try {
+      db.prepare('INSERT INTO pln_attempts (pln_id, user_id, started_at) VALUES (?, ?, ?)').run(p.id, req.user.id, Date.now() + COUNTDOWN_MS);
+    } catch {
+      throw bad('Diesen PLN hast du schon begonnen.');
+    }
+    res.json({ ...plnState(p, req.user.id), countdownMs: COUNTDOWN_MS });
+  });
+
+  app.post('/api/me/plns/:id/save', auth('student'), (req, res) => {
+    const p = studentPln(req);
+    const a = db.prepare('SELECT * FROM pln_attempts WHERE pln_id = ? AND user_id = ?').get(p.id, req.user.id);
+    if (!a) throw bad('Der PLN wurde nicht gestartet.');
+    const now = Date.now();
+    if (a.submitted_at) throw bad('Der PLN wurde bereits abgegeben.');
+    if (now > a.started_at + PLN_DURATION_MS + PLN_GRACE_MS) throw bad('Die Zeit ist abgelaufen. Gewertet wird der zuletzt gespeicherte Stand.');
+    if (typeof req.body.typed !== 'string') throw bad('Text fehlt.');
+    const typed = Array.from(req.body.typed).slice(0, PLN_MAX_CHARS).join('');
+    const final = req.body.final === true || now > a.started_at + PLN_DURATION_MS;
+    db.prepare('UPDATE pln_attempts SET typed = ?, saved_at = ?, submitted_at = ? WHERE pln_id = ? AND user_id = ?').run(typed, now, final ? now : null, p.id, req.user.id);
+    res.json({ ok: true, final });
   });
 
   // ---------- Fehlerbehandlung ----------

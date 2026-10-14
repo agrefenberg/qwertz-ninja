@@ -1,3 +1,4 @@
+import { openPlnCards } from './pln.js';
 import { append, fmtDate, fmtDuration, fmtNum, get, h, patch, post, sparkline, toast } from '../ui.js';
 import { Trainer } from '../trainer.js';
 import { contrastExercise, randomWords, weakExercise, wordsExercise } from '../words.js';
@@ -45,12 +46,13 @@ function heroCard(me, { exercises, best, passed, lessons }) {
 export async function homeView(app) {
   await refreshMe();
   const me = state.me;
-  const [assignments, results, weak, course, profile] = await Promise.all([
+  const [assignments, results, weak, course, profile, plns] = await Promise.all([
     get('/api/me/assignments'),
     get('/api/me/results'),
     get('/api/me/weak-keys'),
     get('/api/me/course'),
     get('/api/me/errors'),
+    get('/api/me/plns'),
   ]);
   const tip = suggestion(course, profile);
   const passedLessons = course.lessons.filter((l) => l.passed).length;
@@ -81,6 +83,7 @@ export async function homeView(app) {
           )
         )
       : null,
+    openPlnCards(plns),
     h(
       'a.suggestion',
       { href: tip.href },

@@ -1,6 +1,7 @@
 import { append, del, errorBox, fmtDate, fmtDuration, fmtNum, formData, get, h, patch, post, put, toast } from '../ui.js';
 import { state } from '../app.js';
 import { errorAnalysis, stars } from './student.js';
+import { plnSection } from './pln.js';
 
 const KIND_LABEL = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test' };
 
@@ -116,6 +117,7 @@ export async function classView(app, { id }) {
       )
     ),
     h('section.card', h('h2', 'Aufgaben und Tests'), assignmentList(assignments, reload), assignmentForm(id, texts, schemes, reload)),
+    plnSection(id, texts, schemes),
     h(
       'section.card',
       h('h2', `Schüler (${cls.students.length})`),
