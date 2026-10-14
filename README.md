@@ -37,19 +37,16 @@ docker compose up -d --build
 
 Die App ist dann unter `http://<IP-des-Rechners>:3080` erreichbar, die Datenbank liegt in `./data`. Beim ersten Aufruf legt man den Admin an. Ist Port 3080 belegt: `QN_PORT=3090 docker compose up -d --build`.
 
-### Im Internet mit HTTPS (z. B. Raspberry Pi)
+### Auf einem Raspberry Pi (mit Einrichtungsskript)
 
-1. Raspberry Pi OS (64 Bit) mit Docker installieren.
-2. Eine Adresse besorgen, die auf euren Internetanschluss zeigt, z. B. über MyFRITZ! oder einen DynDNS-Dienst.
-3. Am Router die Ports 80 und 443 an den Raspberry Pi weiterleiten.
-4. Wichtig: Den Admin zuerst im lokalen Netz anlegen, bevor die Ports freigegeben werden. Sonst könnte jemand anderes die Einrichtung übernehmen.
-5. Starten:
+Voraussetzungen: Raspberry Pi 4 oder 5 mit Raspberry Pi OS Lite (64 Bit), am besten mit USB-SSD statt SD-Karte. Für den Zugriff von außen außerdem eine Adresse, die auf euren Internetanschluss zeigt (z. B. MyFRITZ! oder DynDNS).
 
-```sh
-QN_DOMAIN=ninja.example.de docker compose -f docker-compose.https.yml up -d --build
-```
+1. Zip-Datei auf den Pi kopieren und entpacken: `unzip qwertz-ninja.zip -d qwertz-ninja && cd qwertz-ninja`
+2. Einrichtung starten: `sudo bash pi-einrichten.sh`
 
-Caddy holt das HTTPS-Zertifikat automatisch und schreibt keine Zugriffsprotokolle mit IP-Adressen.
+Das Skript aktualisiert das System, schaltet automatische Sicherheitsupdates ein, installiert Docker, startet die App zuerst nur im lokalen Netz und wartet, bis der Admin angelegt ist. Erst danach stellt es auf HTTPS um (Caddy holt das Zertifikat automatisch und schreibt keine Zugriffsprotokolle mit IP-Adressen). Zum Schluss richtet es die nächtliche Sicherung ein und sagt, welche Ports (80 und 443) am Router freizugeben sind. Das Skript kann jederzeit erneut laufen, z. B. um HTTPS später einzuschalten.
+
+Ohne Skript geht es auch von Hand: `QN_DOMAIN=ninja.example.de docker compose -f docker-compose.https.yml up -d --build`. Wichtig: den Admin anlegen, bevor die Ports freigegeben werden.
 
 ### Ohne Docker
 
@@ -62,13 +59,15 @@ Umgebungsvariablen: `PORT` (Standard 3000), `DB_FILE` (Standard `./data/qwertz-n
 
 ### Aktualisieren
 
-Neue Zip-Datei in denselben Ordner entpacken (der Ordner `data` bleibt dabei erhalten) und neu bauen:
+Neue Zip-Datei in denselben Ordner entpacken (der Ordner `data` und die Einstellungen in `.env` bleiben dabei erhalten) und neu starten:
 
 ```sh
 unzip -o qwertz-ninja.zip -d qwertz-ninja
 cd qwertz-ninja
-docker compose up -d --build
+sudo ./start.sh
 ```
+
+`start.sh` wählt selbst, ob mit HTTPS (wenn `QN_DOMAIN` in `.env` steht) oder nur im lokalen Netz.
 
 ### Demodaten
 
@@ -76,7 +75,7 @@ Unter Admin › Einstellungen lassen sich Demodaten anlegen und wieder entfernen
 
 ### Sicherung
 
-Es genügt, den Ordner `data` zu sichern. Für eine konsistente Kopie im laufenden Betrieb: `sqlite3 data/qwertz-ninja.sqlite ".backup sicherung.sqlite"`.
+Es genügt, den Ordner `data` zu sichern. `./sicherung.sh` legt im laufenden Betrieb eine konsistente Kopie in `data/sicherung` an (die letzten 14 bleiben) und kopiert sie zusätzlich in `QN_BACKUP_DIR` aus `.env`, z. B. auf einen USB-Stick. Das Einrichtungsskript startet die Sicherung jede Nacht um 2:30 Uhr. Wiederherstellen: App stoppen, die gewünschte Sicherung als `data/qwertz-ninja.sqlite` zurückkopieren (vorhandene `-wal`- und `-shm`-Dateien daneben löschen), wieder starten.
 
 ## Entwicklung
 
