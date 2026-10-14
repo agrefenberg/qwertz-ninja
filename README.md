@@ -41,7 +41,7 @@ Die App ist dann unter `http://<IP-des-Rechners>:3080` erreichbar, die Datenbank
 
 Voraussetzungen: Raspberry Pi 4 oder 5 mit Raspberry Pi OS Lite (64 Bit), am besten mit USB-SSD statt SD-Karte. Für den Zugriff von außen außerdem eine Adresse, die auf euren Internetanschluss zeigt (z. B. MyFRITZ! oder DynDNS).
 
-1. Zip-Datei auf den Pi kopieren und entpacken: `unzip qwertz-ninja.zip -d qwertz-ninja && cd qwertz-ninja`
+1. Zip-Datei auf den Pi kopieren und entpacken: `unzip qwertz-ninja-raspi.zip -d qwertz-ninja && cd qwertz-ninja`
 2. Einrichtung starten: `sudo bash pi-einrichten.sh`
 
 Das Skript aktualisiert das System, schaltet automatische Sicherheitsupdates ein, installiert Docker, startet die App zuerst nur im lokalen Netz und wartet, bis der Admin angelegt ist. Erst danach stellt es auf HTTPS um (Caddy holt das Zertifikat automatisch und schreibt keine Zugriffsprotokolle mit IP-Adressen). Zum Schluss richtet es die nächtliche Sicherung ein und sagt, welche Ports (80 und 443) am Router freizugeben sind. Das Skript kann jederzeit erneut laufen, z. B. um HTTPS später einzuschalten.
@@ -62,7 +62,7 @@ Umgebungsvariablen: `PORT` (Standard 3000), `DB_FILE` (Standard `./data/qwertz-n
 Neue Zip-Datei in denselben Ordner entpacken (der Ordner `data` und die Einstellungen in `.env` bleiben dabei erhalten) und neu starten:
 
 ```sh
-unzip -o qwertz-ninja.zip -d qwertz-ninja
+unzip -o qwertz-ninja-raspi.zip -d qwertz-ninja
 cd qwertz-ninja
 sudo ./start.sh
 ```
