@@ -18,6 +18,11 @@ set_env() { # set_env KEY VALUE  (in .env, ohne andere Einträge zu verändern)
 }
 
 # ---------------------------------------------------------------- Prüfungen
+if [ "$(uname -s)" != Linux ] || ! command -v apt-get >/dev/null; then
+  echo "Dieses Skript ist nur für den Raspberry Pi (Raspberry Pi OS)."
+  echo "Auf einem Mac oder anderen Rechner mit Docker genügt:  docker compose up -d --build"
+  exit 1
+fi
 if [ "$(id -u)" -ne 0 ]; then
   echo "Bitte mit sudo starten: sudo bash pi-einrichten.sh"; exit 1
 fi
