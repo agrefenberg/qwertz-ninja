@@ -769,21 +769,47 @@ kbd {
   margin-top: 0.25rem;
 }
 
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
 @media print {
   body {
     background: #fff;
   }
-  .topbar,
-  .toolbar,
-  #app > :not(.print-sheet) {
+  /* Beim Drucken der Zugangsliste nur die Streifen ausgeben. */
+  body:has(.print-sheet) .topbar,
+  body:has(.print-sheet) #app *:not(.print-sheet):not(.print-sheet *):not(:has(.print-sheet)) {
     display: none !important;
   }
-  .container {
+  body:has(.print-sheet) .container {
     padding: 0;
     max-width: none;
   }
+  .toast {
+    display: none !important;
+  }
+  /* Inline-Blöcke werden nicht über Seitengrenzen geteilt, Grid-Zellen schon. */
   .print-sheet {
-    grid-template-columns: 1fr 1fr;
+    display: block;
+    font-size: 10pt;
+    border: 0;
+  }
+  .strip {
+    display: inline-block;
+    width: 50%;
+    vertical-align: top;
+    padding: 4mm 5mm;
+    border: 1px dashed #888;
+    margin: 0 -1px -1px 0;
+  }
+  .strip-head {
+    display: block;
+  }
+  .strip-head span {
+    display: block;
+    color: #555;
   }
 }
 
