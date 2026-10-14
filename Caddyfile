@@ -1,0 +1,9 @@
+{$QN_DOMAIN} {
+	encode gzip
+	header Strict-Transport-Security "max-age=31536000"
+	# Keine Zugriffsprotokolle mit IP-Adressen (Datensparsamkeit).
+	log {
+		output discard
+	}
+	reverse_proxy qwertz-ninja:3000
+}

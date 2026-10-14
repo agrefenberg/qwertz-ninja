@@ -1,0 +1,31 @@
+# Betrieb im Internet mit HTTPS (z. B. auf einem Raspberry Pi).
+# Voraussetzungen: eine (Dyn-)DNS-Adresse, die auf euren Anschluss zeigt, und am Router
+# freigegebene Ports 80 und 443 zu diesem Gerät. Caddy holt das Zertifikat automatisch.
+#   QN_DOMAIN=ninja.example.de docker compose -f docker-compose.https.yml up -d --build
+services:
+  qwertz-ninja:
+    build: .
+    restart: unless-stopped
+    environment:
+      SECURE_COOKIES: "1"
+    volumes:
+      - ./data:/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      QN_DOMAIN: ${QN_DOMAIN:?Bitte QN_DOMAIN setzen, z. B. ninja.example.de}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - qwertz-ninja
+
+volumes:
+  caddy_data:
+  caddy_config:

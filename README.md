@@ -27,15 +27,27 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 
 Voraussetzung: Docker, oder Node.js ab Version 22.13.
 
-### Mit Docker
+### Im lokalen Netz (mit Docker)
 
 ```sh
 docker compose up -d --build
 ```
 
-Die App läuft dann auf Port 3000, die Datenbank liegt in `./data`. Beim ersten Aufruf legt man den Admin an.
+Die App ist dann unter `http://<IP-des-Rechners>:3080` erreichbar, die Datenbank liegt in `./data`. Beim ersten Aufruf legt man den Admin an. Ist Port 3080 belegt: `QN_PORT=3090 docker compose up -d --build`.
 
-Für den Betrieb im Netz gehört die App hinter einen Reverse Proxy mit HTTPS (z. B. nginx oder Caddy). Dann in `docker-compose.yml` `SECURE_COOKIES: "1"` setzen.
+### Im Internet mit HTTPS (z. B. Raspberry Pi)
+
+1. Raspberry Pi OS (64 Bit) mit Docker installieren.
+2. Eine Adresse besorgen, die auf euren Internetanschluss zeigt, z. B. über MyFRITZ! oder einen DynDNS-Dienst.
+3. Am Router die Ports 80 und 443 an den Raspberry Pi weiterleiten.
+4. Wichtig: Den Admin zuerst im lokalen Netz anlegen, bevor die Ports freigegeben werden. Sonst könnte jemand anderes die Einrichtung übernehmen.
+5. Starten:
+
+```sh
+QN_DOMAIN=ninja.example.de docker compose -f docker-compose.https.yml up -d --build
+```
+
+Caddy holt das HTTPS-Zertifikat automatisch und schreibt keine Zugriffsprotokolle mit IP-Adressen.
 
 ### Ohne Docker
 
