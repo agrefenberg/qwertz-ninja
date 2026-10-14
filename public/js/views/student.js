@@ -17,13 +17,27 @@ export function beltCard(level) {
   const bar = h('div.progress-bar');
   bar.style.width = `${pct}%`;
   return h(
-    'section.card.belt-card',
+    'div.belt-card',
     h('div.belt', { 'data-level': level.level }, h('span.belt-knot')),
     h(
       'div',
-      h('div.belt-title', `${level.belt}er Gürtel`, h('span.muted', ` · Level ${level.level}`)),
+      h('div.belt-title', `${level.belt}er Gürtel`, h('span.belt-level', ` · Level ${level.level}`)),
       h('div.progress', bar),
-      h('div.muted.small', level.next ? `${fmtNum(level.xp)} von ${fmtNum(level.next)} Punkten bis zum nächsten Gürtel` : `${fmtNum(level.xp)} Punkte, höchster Gürtel erreicht`)
+      h('div.small.belt-xp', level.next ? `${fmtNum(level.xp)} von ${fmtNum(level.next)} Punkten bis zum nächsten Gürtel` : `${fmtNum(level.xp)} Punkte, höchster Gürtel erreicht`)
+    )
+  );
+}
+
+function heroCard(me, { exercises, best, passed, lessons }) {
+  return h(
+    'section.hero',
+    h('img.hero-ninja', { src: '/img/ninja.svg', alt: '' }),
+    h('div.hero-main', h('h1', `Hallo, ${me.displayName}!`), beltCard(me.level)),
+    h(
+      'div.hero-stats',
+      h('div', h('span.hero-num', fmtNum(exercises)), h('span.hero-label', 'Übungen')),
+      h('div', h('span.hero-num', best ? fmtNum(best) : '–'), h('span.hero-label', me.prefs.metric === 'wpm' ? 'Bestes WPM' : 'Bestes Tempo')),
+      h('div', h('span.hero-num', `${passed}`, h('small', `/${lessons}`)), h('span.hero-label', 'Lektionen'))
     )
   );
 }
@@ -45,8 +59,12 @@ export async function homeView(app) {
   const values = recent.map((r) => (me.prefs.metric === 'wpm' ? r.wpm : r.apm));
 
   append(app, 
-    h('h1', `Hallo, ${me.displayName}!`),
-    beltCard(me.level),
+    heroCard(me, {
+      exercises: results.length,
+      best: Math.max(0, ...results.map((r) => (me.prefs.metric === 'wpm' ? r.wpm : r.apm))),
+      passed: passedLessons,
+      lessons: course.lessons.length,
+    }),
     open.length
       ? h(
           'section.card',
@@ -63,7 +81,14 @@ export async function homeView(app) {
           )
         )
       : null,
-    h('a.card.suggestion', { href: tip.href }, h('span.muted.small', 'Empfohlen für dich'), h('strong', tip.title), h('span.small', tip.text)),
+    h(
+      'a.suggestion',
+      { href: tip.href },
+      h('span.pill-label', 'Empfohlen für dich'),
+      h('strong', tip.title),
+      h('span', tip.text),
+      h('span.button.go', 'Los geht’s')
+    ),
     h('h2', 'Üben'),
     h(
       'div.tiles',

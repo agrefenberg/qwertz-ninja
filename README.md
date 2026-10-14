@@ -23,7 +23,7 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 - Keine Tracking-Cookies, keine CDNs, keine externen Schriftarten oder Skripte. Nur ein technisch notwendiges Sitzungs-Cookie.
 - Alle Ergebnisse, Aufgaben, Abzeichen, Punkte, Kursfortschritte und Fehleranalysen werden am Tag nach dem Schuljahresende (Standard: 31. Juli) automatisch gelöscht. Konten und Klassen bleiben bestehen.
 - Die Daten liegen in einer einzigen SQLite-Datei auf dem eigenen Server.
-- Alle mitgelieferten Übungstexte wurden eigens für QWERTZ Ninja geschrieben.
+- Alle mitgelieferten Übungstexte wurden eigens für QWERTZ Ninja geschrieben. Die Schrift Plus Jakarta Sans (SIL Open Font License, `public/fonts`) wird vom eigenen Server ausgeliefert.
 
 ## Betrieb
 

@@ -18,6 +18,7 @@ export function loginView(app) {
         }
       },
     },
+    h('img.login-ninja', { src: '/img/ninja.svg', alt: '' }),
     h('h1', 'Anmelden'),
     h('label', 'Benutzername', h('input', { name: 'username', autocomplete: 'username', required: true, autofocus: true, autocapitalize: 'off' })),
     h('label', 'Passwort', h('input', { name: 'password', type: 'password', autocomplete: 'current-password', required: true })),

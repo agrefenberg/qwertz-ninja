@@ -89,11 +89,10 @@ function renderNav() {
   document.querySelector('.brand-name').textContent = state.setup?.schoolName && state.setup.schoolName !== 'QWERTZ Ninja' ? `QWERTZ Ninja · ${state.setup.schoolName}` : 'QWERTZ Ninja';
   if (!state.me) return;
   const current = location.hash || '#/';
-  for (const [href, label] of NAV[state.me.role]) {
-    nav.append(h('a', { href, class: current === href ? 'active' : null }, label));
-  }
+  const section = NAV[state.me.role].filter(([href]) => href !== '#/' && current.startsWith(href)).at(-1)?.[0] || (current === '#/' ? '#/' : null);
   nav.append(
-    h('span.nav-user', state.me.displayName),
+    h('span.nav-pill', NAV[state.me.role].map(([href, label]) => h('a', { href, class: section === href ? 'active' : null }, label))),
+    h('span.nav-user', h('span.avatar', state.me.displayName.slice(0, 1)), state.me.displayName),
     h('button.link', {
       onclick: async () => {
         await post('/api/logout');
