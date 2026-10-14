@@ -1299,6 +1299,26 @@ textarea.pln-area:focus {
   background: var(--green);
 }
 
+body.exam-mode .topbar {
+  display: none;
+}
+body.exam-mode .container {
+  padding-top: 1.5rem;
+}
+.pln-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-s);
+  background: var(--coral);
+}
+.pln-warning[hidden] {
+  display: none;
+}
+
 /* Druckvorlage */
 .pln-sheet {
   background: #fff;

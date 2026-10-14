@@ -148,5 +148,12 @@ export async function route() {
   }
 }
 
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => {
+  // Während eines PLN ist keine Navigation möglich: Die Adresse springt zurück.
+  if (state.examLock) {
+    if (location.hash !== state.examLock) history.replaceState(null, '', state.examLock);
+    return;
+  }
+  route();
+});
 route();

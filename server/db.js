@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS pln_attempts (
   typed TEXT NOT NULL DEFAULT '',
   saved_at INTEGER,
   submitted_at INTEGER,
+  left_count INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (pln_id, user_id)
 );
 
@@ -165,6 +166,9 @@ export function openDb(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  // Spalten, die nach der ersten Version dazugekommen sind
+  const cols = db.prepare('PRAGMA table_info(pln_attempts)').all().map((c) => c.name);
+  if (!cols.includes('left_count')) db.exec('ALTER TABLE pln_attempts ADD COLUMN left_count INTEGER NOT NULL DEFAULT 0');
   seedTexts(db);
   return db;
 }

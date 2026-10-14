@@ -105,7 +105,10 @@ test('PLN-Ablauf: anlegen, freigeben, schreiben, abgeben, PDF', async () => {
 
   const src = detail.pln.text;
   const typed = src.slice(0, 120).replace('Schreibmaschine', 'Schriebmaschine') + '\n' + src.slice(121, 300);
-  assert.equal((await s1.post(`/api/me/plns/${plnId}/save`, { typed: typed.slice(0, 50) })).status, 200);
+  assert.equal((await s1.post(`/api/me/plns/${plnId}/save`, { typed: typed.slice(0, 50), leftCount: 2 })).status, 200);
+  // Verlassen des Prüfungsfensters wird gezählt und kann nicht verringert werden.
+  await s1.post(`/api/me/plns/${plnId}/save`, { typed: typed.slice(0, 50), leftCount: 0 });
+  assert.equal((await s1.get(`/api/me/plns/${plnId}`)).data.leftCount, 2);
   // Nach einem Neuladen ist der Zwischenstand wieder da.
   assert.equal((await s1.get(`/api/me/plns/${plnId}`)).data.typed, typed.slice(0, 50));
   assert.equal((await s1.post(`/api/me/plns/${plnId}/save`, { typed, final: true })).status, 200);
@@ -124,6 +127,7 @@ test('PLN-Ablauf: anlegen, freigeben, schreiben, abgeben, PDF', async () => {
   const r1 = rows.find((r) => r.username === c1.username);
   assert.equal(r1.state, 'done');
   assert.equal(r1.errors, 2); // Tippfehler im Wort + erster Return
+  assert.equal(r1.left_count, 2);
   assert.ok(r1.grade.grade >= 1);
   const r2 = rows.find((r) => r.username === c2.username);
   assert.equal(r2.state, 'done');

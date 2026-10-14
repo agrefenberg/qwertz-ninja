@@ -179,7 +179,11 @@ export async function plnView(app, { id }) {
                 'tr',
                 h('td', r.display_name),
                 h('td.mono', r.username),
-                h('td', r.state === 'none' ? h('span.muted', 'nicht begonnen') : r.state === 'running' ? h('span.tag', `schreibt bis ${time(r.started_at + 600000)}`) : 'abgegeben'),
+                h(
+                  'td',
+                  r.state === 'none' ? h('span.muted', 'nicht begonnen') : r.state === 'running' ? h('span.tag', `schreibt bis ${time(r.started_at + 600000)}`) : 'abgegeben',
+                  r.left_count ? h('span.tag.tag-test', { title: 'Prüfungsfenster verlassen' }, ` ${r.left_count}× verlassen`) : null
+                ),
                 h('td', r.started_at ? fmtDate(r.started_at) : '–'),
                 h('td', r.gross ?? '–'),
                 h('td', r.errors ?? '–'),
@@ -317,6 +321,7 @@ export async function studentPlnView(app, { id }) {
           {
             onclick: async (e) => {
               e.target.disabled = true;
+              enterFullscreen();
               try {
                 const started = await post(`/api/me/plns/${id}/start`);
                 app.replaceChildren();
@@ -354,16 +359,58 @@ function runPln(app, s, head) {
   });
   area.value = s.typed || '';
   const overlay = h('div.pln-countdown', '');
-  append(app, ...head, h('div.pln-bar', clock, status), h('div.pln-stage', area, overlay));
+  const leftNote = h('div.pln-warning', { hidden: true });
+  append(app, ...head, h('div.pln-bar', clock, status), leftNote, h('div.pln-stage', area, overlay));
+
+  // Prüfungsmodus: Menü ausblenden, Navigation sperren, Vollbild. Verlassen des Fensters wird gezählt.
+  state.examLock = location.hash;
+  document.body.classList.add('exam-mode');
+  let leftCount = s.leftCount || 0;
+  const showLeft = () => {
+    leftNote.hidden = false;
+    leftNote.replaceChildren(
+      h('strong', 'Bitte im PLN bleiben.'),
+      h('span', ` Du hast das Fenster ${leftCount}× verlassen. Deine Lehrkraft sieht das.`)
+    );
+    if (!document.fullscreenElement && document.fullscreenEnabled) {
+      leftNote.append(h('button.small', { onclick: () => { enterFullscreen(); area.focus(); } }, 'Vollbild wieder einschalten'));
+    }
+  };
+  let lastLeave = 0;
+  const onLeave = () => {
+    if (finished || Date.now() + offset < s.startedAt) return;
+    if (Date.now() - lastLeave < 1500) return; // ein Wechsel löst mehrere Ereignisse aus
+    lastLeave = Date.now();
+    leftCount++;
+    showLeft();
+  };
+  const onVisibility = () => document.visibilityState === 'hidden' && onLeave();
+  const onFullscreen = () => {
+    if (!document.fullscreenElement) onLeave();
+  };
+  window.addEventListener('blur', onLeave);
+  document.addEventListener('visibilitychange', onVisibility);
+  document.addEventListener('fullscreenchange', onFullscreen);
+  if (leftCount) showLeft();
+  const unlock = () => {
+    state.examLock = null;
+    document.body.classList.remove('exam-mode');
+    window.removeEventListener('blur', onLeave);
+    document.removeEventListener('visibilitychange', onVisibility);
+    document.removeEventListener('fullscreenchange', onFullscreen);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  };
 
   let lastSent = null;
+  let lastLeft = leftCount;
   let finished = false;
   const save = async (final = false) => {
     const typed = area.value;
-    if (!final && typed === lastSent) return;
+    if (!final && typed === lastSent && leftCount === lastLeft) return;
     try {
-      await post(`/api/me/plns/${s.id}/save`, { typed, final });
+      await post(`/api/me/plns/${s.id}/save`, { typed, final, leftCount });
       lastSent = typed;
+      lastLeft = leftCount;
       status.textContent = final ? 'Abgegeben' : `Gespeichert ${new Date().toLocaleTimeString('de-DE')}`;
     } catch (e) {
       status.textContent = e.message;
@@ -382,8 +429,10 @@ function runPln(app, s, head) {
       await save(true);
       overlay.replaceChildren(h('strong', 'Abgegeben.'), h('span', 'Deine Abschrift ist gespeichert.'), h('a.button', { href: '#/' }, 'Zur Startseite'));
     } catch (e) {
-      overlay.replaceChildren(h('strong', 'Speichern nicht möglich'), h('span', e.message));
+      overlay.replaceChildren(h('strong', 'Speichern nicht möglich'), h('span', e.message), h('a.button', { href: '#/' }, 'Zur Startseite'));
     }
+    unlock();
+    leftNote.hidden = true;
   };
 
   const tick = () => {
@@ -416,8 +465,14 @@ function runPln(app, s, head) {
     clearInterval(timer);
     clearInterval(autosave);
     window.removeEventListener('beforeunload', warn);
+    unlock();
     if (!finished) save();
   };
+}
+
+function enterFullscreen() {
+  const el = document.documentElement;
+  if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => {});
 }
 
 // Für die Startseite der Lernenden.

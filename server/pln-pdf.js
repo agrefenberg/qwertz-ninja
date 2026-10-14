@@ -52,6 +52,7 @@ function studentPage(doc, { school, className, pln, scheme, e }) {
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#000').text(`Pseudonym: ${student.display_name}`, { continued: true });
   doc.font('Helvetica').text(`   (Benutzername ${student.username})`);
   doc.text(`Datum: ${date(attempt.started_at)}   Beginn: ${time(attempt.started_at)} Uhr   Ende: ${time(end)} Uhr`);
+  if (attempt.left_count) doc.fillColor(RED).text(`Prüfungsfenster während des PLN ${attempt.left_count}× verlassen.`).fillColor('#000');
   doc.moveDown(0.5);
 
   // Ergebniszeile

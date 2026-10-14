@@ -920,7 +920,7 @@ export function createApp(db, { secureCookies = false } = {}) {
     const now = Date.now();
     const rows = db
       .prepare(
-        `SELECT u.id AS user_id, u.display_name, u.username, a.started_at, a.saved_at, a.submitted_at, a.typed
+        `SELECT u.id AS user_id, u.display_name, u.username, a.started_at, a.saved_at, a.submitted_at, a.left_count, a.typed
          FROM users u LEFT JOIN pln_attempts a ON a.user_id = u.id AND a.pln_id = ?
          WHERE u.class_id = ? AND u.role = 'student' ORDER BY u.display_name`
       )
@@ -970,7 +970,7 @@ export function createApp(db, { secureCookies = false } = {}) {
     const now = Date.now();
     const entries = db
       .prepare(
-        `SELECT u.display_name, u.username, a.started_at, a.submitted_at, a.typed FROM pln_attempts a JOIN users u ON u.id = a.user_id
+        `SELECT u.display_name, u.username, a.started_at, a.submitted_at, a.left_count, a.typed FROM pln_attempts a JOIN users u ON u.id = a.user_id
          WHERE a.pln_id = ? ORDER BY u.display_name`
       )
       .all(p.id)
@@ -1003,6 +1003,7 @@ export function createApp(db, { secureCookies = false } = {}) {
       durationMs: PLN_DURATION_MS,
       serverNow: now,
       startedAt: a?.started_at ?? null,
+      leftCount: a?.left_count ?? 0,
       ended: plnEnded(a, now),
       typed: a && !plnEnded(a, now) ? a.typed : null,
     };
@@ -1044,7 +1045,8 @@ export function createApp(db, { secureCookies = false } = {}) {
     if (typeof req.body.typed !== 'string') throw bad('Text fehlt.');
     const typed = Array.from(req.body.typed).slice(0, PLN_MAX_CHARS).join('');
     const final = req.body.final === true || now > a.started_at + PLN_DURATION_MS;
-    db.prepare('UPDATE pln_attempts SET typed = ?, saved_at = ?, submitted_at = ? WHERE pln_id = ? AND user_id = ?').run(typed, now, final ? now : null, p.id, req.user.id);
+    const left = Math.max(a.left_count, Math.min(Number(req.body.leftCount) | 0, 10000));
+    db.prepare('UPDATE pln_attempts SET typed = ?, saved_at = ?, submitted_at = ?, left_count = ? WHERE pln_id = ? AND user_id = ?').run(typed, now, final ? now : null, left, p.id, req.user.id);
     res.json({ ok: true, final });
   });
 
