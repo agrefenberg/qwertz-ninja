@@ -1,0 +1,11 @@
+services:
+  qwertz-ninja:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Auf 1 setzen, sobald die App hinter HTTPS läuft (z. B. hinter nginx oder Caddy).
+      SECURE_COOKIES: "0"
+    volumes:
+      - ./data:/data
