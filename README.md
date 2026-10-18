@@ -49,6 +49,16 @@ Die App ist dann unter `http://<IP-des-Rechners>:3080` erreichbar, die Datenbank
 
 Voraussetzungen: Raspberry Pi 4 oder 5 mit Raspberry Pi OS Lite (64 Bit), am besten mit USB-SSD statt SD-Karte. Für den Zugriff von außen außerdem eine Adresse, die auf euren Internetanschluss zeigt (z. B. MyFRITZ! oder DynDNS).
 
+Am einfachsten direkt von GitHub, mit einem einzigen Befehl im Terminal des Pi:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/agrefenberg/qwertz-ninja/main/installieren.sh | sudo bash
+```
+
+Der Befehl lädt den Code nach `~/qwertz-ninja` und startet die Einrichtung. Derselbe Befehl spielt später auch jedes Update ein: Er holt den neuesten Stand von GitHub und startet die App neu, der Ordner `data` und die Einstellungen in `.env` bleiben erhalten. Eine bisher per Zip-Datei eingerichtete Installation in `~/qwertz-ninja` wird dabei auf GitHub-Updates umgestellt.
+
+Alternativ mit der Zip-Datei:
+
 1. Zip-Datei auf den Pi kopieren und entpacken: `unzip qwertz-ninja-raspi.zip -d qwertz-ninja && cd qwertz-ninja`
 2. Einrichtung starten: `sudo bash pi-einrichten.sh`
 
@@ -67,7 +77,7 @@ Umgebungsvariablen: `PORT` (Standard 3000), `DB_FILE` (Standard `./data/qwertz-n
 
 ### Aktualisieren
 
-Neue Zip-Datei in denselben Ordner entpacken (der Ordner `data` und die Einstellungen in `.env` bleiben dabei erhalten) und neu starten:
+Auf dem Raspberry Pi mit GitHub-Installation genügt der Installationsbefehl von oben. Sonst die neue Zip-Datei in denselben Ordner entpacken (der Ordner `data` und die Einstellungen in `.env` bleiben dabei erhalten) und neu starten:
 
 ```sh
 unzip -o qwertz-ninja-raspi.zip -d qwertz-ninja

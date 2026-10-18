@@ -13,7 +13,7 @@ rm -f "$OUT/qwertz-ninja-raspi.zip" "$OUT/qwertz-ninja.zip"
 git archive --format=zip -o "$OUT/qwertz-ninja-raspi.zip" HEAD
 
 git archive HEAD | tar -x -C "$TMP"
-rm -f "$TMP/pi-einrichten.sh" "$TMP/start.sh" "$TMP/sicherung.sh"
+rm -f "$TMP/pi-einrichten.sh" "$TMP/start.sh" "$TMP/sicherung.sh" "$TMP/installieren.sh"
 python3 scripts/readme-ohne-pi.py "$TMP/README.md"
 (cd "$TMP" && zip -qr "$OUT/qwertz-ninja.zip" .)
 echo "Pakete in $OUT"

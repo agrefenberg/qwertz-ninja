@@ -144,4 +144,8 @@ else
 fi
 info ""
 info "Tipp: Dem Pi im Router immer dieselbe IP-Adresse geben ($IP)."
-info "Update einspielen: neue Zip-Datei entpacken, dann  sudo ./start.sh"
+if [ -d .git ]; then
+  info "Update einspielen:  curl -fsSL https://raw.githubusercontent.com/agrefenberg/qwertz-ninja/main/installieren.sh | sudo bash"
+else
+  info "Update einspielen: neue Zip-Datei entpacken, dann  sudo ./start.sh"
+fi
