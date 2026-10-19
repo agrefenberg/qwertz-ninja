@@ -41,6 +41,9 @@ export async function teachersView(app) {
   );
   append(app, 
     h('h1', 'Lehrkräfte'),
+    state.me.schoolActive === false
+      ? h('p.notice', 'Eure Schule ist noch nicht freigeschaltet. Lehrkräfte und Schüler können sich erst anmelden, wenn der unterschriebene AVV beim Betreiber vorliegt. ', h('a', { href: '#/einstellungen' }, 'Zum AVV'))
+      : null,
     teachers.length
       ? h(
           'table.table',
@@ -116,7 +119,24 @@ export async function settingsView(app) {
     h('button.primary', { type: 'submit' }, 'Speichern')
   );
   const next = h('strong', new Date(s.nextPurge).toLocaleDateString('de-DE'));
-  append(app, h('h1', 'Einstellungen'), h('p', 'Nächste automatische Löschung: ', next), form, await demoSection());
+  append(app, h('h1', 'Einstellungen'), h('p', 'Nächste automatische Löschung: ', next), s.mode === 'multi' ? avvCard(s) : null, form, await demoSection());
+}
+
+// Im Mehrschulbetrieb: Vertrag zur Auftragsverarbeitung mit dem Betreiber
+function avvCard(s) {
+  return h(
+    'section.card',
+    h('h2', 'Vertrag zur Auftragsverarbeitung (AVV)'),
+    s.avvSignedAt
+      ? h('p', h('span.tag.tag-ok', 'Unterschrieben'), ` am ${new Date(s.avvSignedAt).toLocaleDateString('de-DE')}. Lehrkräfte und Schüler können sich anmelden.`)
+      : h(
+          'p',
+          h('span.tag.tag-test', 'Noch nicht unterschrieben'),
+          ' Bis der unterschriebene AVV beim Betreiber vorliegt, können sich nur Admins anmelden. Bitte den Vertrag herunterladen, von der Schulleitung unterschreiben lassen und an den Betreiber schicken.'
+        ),
+    s.schoolCode ? h('p.muted.small', 'Schulkennung für die Anmeldung über VIDIS: ', h('b.mono', s.schoolCode)) : null,
+    h('a.button', { href: '/api/admin/avv.pdf', download: '' }, 'AVV als PDF herunterladen')
+  );
 }
 
 async function demoSection() {
@@ -147,13 +167,7 @@ async function demoSection() {
             h(
               'p',
               'Demodaten sind vorhanden. Anmelden zum Beispiel als ',
-              h('b.mono', 'demo-huber'),
-              ', ',
-              h('b.mono', 'demo-maier'),
-              ', ',
-              h('b.mono', 'demo-yilmaz'),
-              ' oder ',
-              h('b.mono', 'demo-schmid'),
+              ['huber', 'maier', 'yilmaz', 'schmid'].map((n, i) => [i ? (i === 3 ? ' oder ' : ', ') : '', h('b.mono', (demo.prefix || 'demo-') + n)]),
               '. Passwort für alle Demo-Konten, auch die der Schüler: ',
               h('b.mono', demo.password),
               '.'

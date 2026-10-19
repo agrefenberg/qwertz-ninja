@@ -1,11 +1,12 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getSetting, setSetting, tx } from './db.js';
+import { getSetting, isMulti, setSetting, tx } from './db.js';
 import {
   COOKIE,
   cookieOptions,
   createSession,
+  generateJoinCode,
   generatePassword,
   generateUsername,
   hashPassword,
@@ -16,7 +17,9 @@ import {
 import { BADGES, levelFor, newBadges } from './gamify.js';
 import { compareTyped, metrics, normalizeChar, normalizeText, suggestGrade } from '../public/js/scoring.js';
 import { nextPurgeDate } from './retention.js';
-import { createDemo, hasDemo, removeDemo, DEMO_PASSWORD } from './demo.js';
+import { operatorRoutes } from './operator.js';
+import { vidisRoutes, vidisConfigured } from './vidis.js';
+import { createDemo, hasDemo, removeDemo, prefixFor, DEMO_PASSWORD } from './demo.js';
 import { composeText, evaluatePln, gradePln, note1Chars, note1Position, PLN_DURATION_MS, PLN_GRACE_MS, PLN_MAX_CHARS, PLN_TITLE } from './pln.js';
 import { writePlnPdf } from './pln-pdf.js';
 import { LESSONS, lessonById, starsFor, PASS_ERROR_RATE } from '../public/js/course.js';
@@ -58,7 +61,7 @@ function int(v, { min = 0, max = 1e9, name = 'Wert' } = {}) {
   return n;
 }
 
-export function createApp(db, { secureCookies = false } = {}) {
+export function createApp(db, { secureCookies = false, vidis = null } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 'loopback');
@@ -84,6 +87,8 @@ export function createApp(db, { secureCookies = false } = {}) {
       return next(new HttpError(415, 'Nur JSON wird akzeptiert.'));
     }
     req.user = sessionUser(db, parseCookies(req.headers.cookie)[COOKIE]);
+    // Im Mehrschulbetrieb ist der Admin ohne Schule der Betreiber.
+    if (req.user && req.user.role === 'admin' && req.user.school_id == null) req.user.role = 'operator';
     next();
   });
 
@@ -93,14 +98,25 @@ export function createApp(db, { secureCookies = false } = {}) {
     next();
   };
 
+  // ---------- Schulen ----------
+
+  const schoolById = (id) => (id == null ? null : db.prepare('SELECT * FROM schools WHERE id = ?').get(id));
+  // Im Mehrschulbetrieb darf eine Schule erst loslegen, wenn der AVV unterschrieben vorliegt.
+  const schoolActive = (school) => !!school && (!isMulti(db) || !!school.avv_signed_at);
+  const brandName = () =>
+    isMulti(db) ? getSetting(db, 'operator_name', 'QWERTZ Ninja') : db.prepare('SELECT name FROM schools ORDER BY id LIMIT 1').get()?.name || 'QWERTZ Ninja';
+
   // ---------- Einrichtung und Anmeldung ----------
 
   app.get('/api/setup', (req, res) => {
     const admins = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get().n;
+    const single = !isMulti(db) ? db.prepare('SELECT * FROM schools ORDER BY id LIMIT 1').get() : null;
     res.json({
       needsSetup: admins === 0,
-      schoolName: getSetting(db, 'school_name', 'QWERTZ Ninja'),
-      privacyNote: getSetting(db, 'privacy_note', ''),
+      mode: isMulti(db) ? 'multi' : 'single',
+      schoolName: isMulti(db) ? brandName() : single?.name || 'QWERTZ Ninja',
+      privacyNote: single?.privacy_note || '',
+      vidis: vidisConfigured(vidis) && isMulti(db),
     });
   });
 
@@ -108,16 +124,24 @@ export function createApp(db, { secureCookies = false } = {}) {
     if (db.prepare("SELECT 1 FROM users WHERE role = 'admin'").get()) throw forbidden();
     const username = str(req.body.username, { max: 40, min: 3, name: 'Benutzername' });
     const password = str(req.body.password, { max: 200, min: 10, name: 'Passwort' });
-    const schoolName = str(req.body.schoolName, { max: 120, name: 'Schulname' });
+    const multi = req.body.mode === 'multi';
+    const name = str(req.body.schoolName, { max: 120, name: multi ? 'Name des Angebots' : 'Schulname' });
     tx(db, () => {
       if (db.prepare("SELECT 1 FROM users WHERE role = 'admin'").get()) throw forbidden();
-      db.prepare("INSERT INTO users (role, username, display_name, password_hash, created_at) VALUES ('admin', ?, ?, ?, ?)").run(
+      let schoolId = null;
+      if (multi) {
+        setSetting(db, 'operator_name', name);
+      } else {
+        schoolId = Number(db.prepare('INSERT INTO schools (name, created_at) VALUES (?, ?)').run(name, Date.now()).lastInsertRowid);
+      }
+      setSetting(db, 'mode', multi ? 'multi' : 'single');
+      db.prepare("INSERT INTO users (role, username, display_name, password_hash, school_id, created_at) VALUES ('admin', ?, ?, ?, ?, ?)").run(
         username,
         username,
         hashPassword(password),
+        schoolId,
         Date.now()
       );
-      setSetting(db, 'school_name', schoolName);
     });
     res.json({ ok: true });
   });
@@ -135,19 +159,26 @@ export function createApp(db, { secureCookies = false } = {}) {
       throw new HttpError(401, 'Benutzername oder Passwort ist falsch.');
     }
     loginAttempts.delete(key);
+    if (user.school_id != null && user.role !== 'admin' && !schoolActive(schoolById(user.school_id))) {
+      throw new HttpError(403, 'Deine Schule ist noch nicht freigeschaltet. Bitte wende dich an die Schulleitung.');
+    }
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
     res.cookie(COOKIE, createSession(db, user.id), cookieOptions(secureCookies));
     res.json({ ok: true });
   });
 
-  app.post('/api/logout', (req, res) => {
+  const vidisApi = vidisRoutes(app, db, { config: vidis, secureCookies, HttpError, schoolById, schoolActive, fetchImpl: vidis?.fetch || fetch });
+
+  app.post('/api/logout', async (req, res) => {
     const token = parseCookies(req.headers.cookie)[COOKIE];
+    const session = token && db.prepare('SELECT id_token FROM sessions WHERE token = ?').get(token);
     if (token) db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
     res.clearCookie(COOKIE, { path: '/' });
-    res.json({ ok: true });
+    // Nach einer Anmeldung über VIDIS muss auch dort abgemeldet werden.
+    res.json({ ok: true, redirect: session?.id_token ? await vidisApi.logoutUrl(session.id_token) : null });
   });
 
-  app.post('/api/me/password', auth('teacher', 'admin'), (req, res) => {
+  app.post('/api/me/password', auth('teacher', 'admin', 'operator'), (req, res) => {
     const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
     if (!verifyPassword(String(req.body.current || ''), row.password_hash)) throw bad('Das aktuelle Passwort ist falsch.');
     const next = str(req.body.next, { min: 10, name: 'Neues Passwort' });
@@ -161,6 +192,7 @@ export function createApp(db, { secureCookies = false } = {}) {
     const u = req.user;
     const badges = db.prepare('SELECT badge, earned_at FROM badges WHERE user_id = ? ORDER BY earned_at').all(u.id);
     const cls = u.class_id ? db.prepare('SELECT id, name, leaderboard_enabled FROM classes WHERE id = ?').get(u.class_id) : null;
+    const school = schoolById(u.school_id);
     res.json({
       id: u.id,
       role: u.role,
@@ -172,8 +204,11 @@ export function createApp(db, { secureCookies = false } = {}) {
       badges: badges.map((b) => ({ id: b.badge, ...BADGES[b.badge], earnedAt: b.earned_at })),
       allBadges: Object.entries(BADGES).map(([id, b]) => ({ id, ...b })),
       class: cls && { id: cls.id, name: cls.name, leaderboard: !!cls.leaderboard_enabled },
-      schoolName: getSetting(db, 'school_name', 'QWERTZ Ninja'),
-      purgeDate: nextPurgeDate(db).toISOString().slice(0, 10),
+      schoolName: school ? school.name : brandName(),
+      purgeDate: school ? nextPurgeDate(school).toISOString().slice(0, 10) : null,
+      mode: isMulti(db) ? 'multi' : 'single',
+      schoolActive: school ? schoolActive(school) : true,
+      vidis: !!u.external_id,
     });
   });
 
@@ -531,9 +566,40 @@ export function createApp(db, { secureCookies = false } = {}) {
       id: cls.id,
       name: cls.name,
       leaderboard: !!cls.leaderboard_enabled,
+      joinCode: cls.join_code,
       lessonCount: LESSONS.length,
       students: students.map((s) => ({ ...s, level: levelFor(s.xp) })),
     });
+  });
+
+  // Beitrittscode: Wer sich über VIDIS anmeldet, kommt ohne Klasse an und tritt mit diesem Code bei.
+  app.post('/api/classes/:id/join-code', auth('teacher'), (req, res) => {
+    const cls = ownClass(req);
+    const code = req.body.remove ? null : generateJoinCode(db);
+    db.prepare('UPDATE classes SET join_code = ? WHERE id = ?').run(code, cls.id);
+    res.json({ joinCode: code });
+  });
+
+  const joinAttempts = new Map();
+  app.post('/api/me/join', auth('student'), (req, res) => {
+    if (req.user.class_id) throw bad('Du bist schon in einer Klasse.');
+    const a = joinAttempts.get(req.user.id) || { n: 0, until: 0 };
+    if (a.until > Date.now()) throw new HttpError(429, 'Zu viele Versuche. Bitte eine Minute warten.');
+    const code = String(req.body.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const cls = code.length === 6
+      ? db
+          .prepare('SELECT c.id, c.name FROM classes c JOIN users t ON t.id = c.teacher_id WHERE c.join_code = ? AND t.school_id = ?')
+          .get(`${code.slice(0, 3)}-${code.slice(3)}`, req.user.school_id)
+      : null;
+    if (!cls) {
+      a.n++;
+      if (a.n >= 5) Object.assign(a, { n: 0, until: Date.now() + 60000 });
+      joinAttempts.set(req.user.id, a);
+      throw bad('Diesen Code gibt es nicht. Bitte bei der Lehrkraft nachfragen.');
+    }
+    joinAttempts.delete(req.user.id);
+    db.prepare('UPDATE users SET class_id = ? WHERE id = ?').run(cls.id, req.user.id);
+    res.json({ id: cls.id, name: cls.name });
   });
 
   app.post('/api/classes/:id/students', auth('teacher'), (req, res) => {
@@ -547,11 +613,12 @@ export function createApp(db, { secureCookies = false } = {}) {
         const password = generatePassword();
         const animal = username.split('-')[1];
         const displayName = `${animal[0].toUpperCase()}${animal.slice(1)} ${username.split('-')[2]}`;
-        db.prepare("INSERT INTO users (role, username, display_name, password_hash, class_id, created_at) VALUES ('student', ?, ?, ?, ?, ?)").run(
+        db.prepare("INSERT INTO users (role, username, display_name, password_hash, class_id, school_id, created_at) VALUES ('student', ?, ?, ?, ?, ?, ?)").run(
           username,
           displayName,
           hashPassword(password),
           cls.id,
+          req.user.school_id,
           Date.now()
         );
         out.push({ username, password, displayName });
@@ -788,9 +855,9 @@ export function createApp(db, { secureCookies = false } = {}) {
       db
         .prepare(
           `SELECT u.id, u.username, u.display_name, (SELECT COUNT(*) FROM classes c WHERE c.teacher_id = u.id) AS classes
-           FROM users u WHERE u.role = 'teacher' ORDER BY u.display_name`
+           FROM users u WHERE u.role = 'teacher' AND u.school_id = ? ORDER BY u.display_name`
         )
-        .all()
+        .all(req.user.school_id)
     );
   });
 
@@ -800,17 +867,18 @@ export function createApp(db, { secureCookies = false } = {}) {
     const displayName = str(req.body.displayName, { max: 80, name: 'Anzeigename' });
     if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) throw bad('Dieser Benutzername ist schon vergeben.');
     const password = generatePassword() + generatePassword();
-    db.prepare("INSERT INTO users (role, username, display_name, password_hash, created_at) VALUES ('teacher', ?, ?, ?, ?)").run(
+    db.prepare("INSERT INTO users (role, username, display_name, password_hash, school_id, created_at) VALUES ('teacher', ?, ?, ?, ?, ?)").run(
       username,
       displayName,
       hashPassword(password),
+      req.user.school_id,
       Date.now()
     );
     res.json({ username, password });
   });
 
   app.post('/api/admin/teachers/:id/reset-password', auth('admin'), (req, res) => {
-    const t = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'teacher'").get(int(req.params.id));
+    const t = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'teacher' AND school_id = ?").get(int(req.params.id), req.user.school_id);
     if (!t) throw notFound();
     const password = generatePassword() + generatePassword();
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), t.id);
@@ -819,7 +887,7 @@ export function createApp(db, { secureCookies = false } = {}) {
   });
 
   app.delete('/api/admin/teachers/:id', auth('admin'), (req, res) => {
-    const t = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'teacher'").get(int(req.params.id));
+    const t = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'teacher' AND school_id = ?").get(int(req.params.id), req.user.school_id);
     if (!t) throw notFound();
     tx(db, () => {
       // Klassen und Schülerkonten der Lehrkraft gehen mit.
@@ -830,11 +898,15 @@ export function createApp(db, { secureCookies = false } = {}) {
   });
 
   app.get('/api/admin/settings', auth('admin'), (req, res) => {
+    const school = schoolById(req.user.school_id);
     res.json({
-      schoolName: getSetting(db, 'school_name', ''),
-      yearEnd: getSetting(db, 'year_end', '07-31'),
-      privacyNote: getSetting(db, 'privacy_note', ''),
-      nextPurge: nextPurgeDate(db).toISOString().slice(0, 10),
+      schoolName: school.name,
+      yearEnd: school.year_end,
+      privacyNote: school.privacy_note,
+      nextPurge: nextPurgeDate(school).toISOString().slice(0, 10),
+      mode: isMulti(db) ? 'multi' : 'single',
+      avvSignedAt: school.avv_signed_at,
+      schoolCode: school.school_code,
     });
   });
 
@@ -844,24 +916,26 @@ export function createApp(db, { secureCookies = false } = {}) {
     const m = /^(\d{2})-(\d{2})$/.exec(yearEnd);
     if (!m || +m[1] < 1 || +m[1] > 12 || +m[2] < 1 || +m[2] > 28) throw bad('Schuljahresende bitte als MM-TT angeben (Tag höchstens 28).');
     const privacyNote = typeof req.body.privacyNote === 'string' ? req.body.privacyNote.slice(0, 5000) : '';
-    setSetting(db, 'school_name', schoolName);
-    setSetting(db, 'year_end', yearEnd);
-    setSetting(db, 'privacy_note', privacyNote);
-    res.json({ ok: true, nextPurge: nextPurgeDate(db).toISOString().slice(0, 10) });
+    db.prepare('UPDATE schools SET name = ?, year_end = ?, privacy_note = ? WHERE id = ?').run(schoolName, yearEnd, privacyNote, req.user.school_id);
+    res.json({ ok: true, nextPurge: nextPurgeDate(schoolById(req.user.school_id)).toISOString().slice(0, 10) });
   });
 
   app.get('/api/admin/demo', auth('admin'), (req, res) => {
-    res.json({ present: hasDemo(db), password: DEMO_PASSWORD });
+    res.json({ present: hasDemo(db, req.user.school_id), password: DEMO_PASSWORD, prefix: prefixFor(req.user.school_id) });
   });
 
   app.post('/api/admin/demo', auth('admin'), (req, res) => {
     if (req.body.action === 'remove') {
-      removeDemo(db);
+      removeDemo(db, req.user.school_id);
       return res.json({ present: false });
     }
     if (req.body.action !== 'create') throw bad('Unbekannte Aktion.');
-    res.json({ present: true, ...createDemo(db) });
+    res.json({ present: true, ...createDemo(db, req.user.school_id) });
   });
+
+  // ---------- Betreiber (Mehrschulbetrieb) und VIDIS ----------
+
+  operatorRoutes(app, db, { auth, bad, notFound, str, int, tx, schoolById, secureCookies, vidis });
 
   // ---------- PLN: 10-Minuten-Abschrift ----------
 
@@ -927,7 +1001,7 @@ export function createApp(db, { secureCookies = false } = {}) {
       .all(p.id, p.class_id);
     res.json({
       pln: { ...p, sources: JSON.parse(p.sources), note1_pos: note1Position(p.text, p.note1_chars), className: cls.name, scheme },
-      schoolName: getSetting(db, 'school_name', ''),
+      schoolName: schoolById(req.user.school_id)?.name || '',
       rows: rows.map(({ typed, ...r }) => {
         const attempt = r.started_at ? { ...r } : null;
         const ended = plnEnded(attempt, now);
@@ -981,7 +1055,7 @@ export function createApp(db, { secureCookies = false } = {}) {
       });
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="pln-${slugify(cls.name)}-${slugify(p.title)}.pdf"`);
-    writePlnPdf(res, { school: getSetting(db, 'school_name', ''), className: cls.name, pln: p, scheme, entries });
+    writePlnPdf(res, { school: schoolById(req.user.school_id)?.name || '', className: cls.name, pln: p, scheme, entries });
   });
 
   // Sicht der Lernenden: Der Text liegt auf Papier vor, am Bildschirm wird nur geschrieben.

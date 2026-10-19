@@ -1,10 +1,10 @@
 import { openPlnCards } from './pln.js';
-import { append, fmtDate, fmtDuration, fmtNum, get, h, patch, post, sparkline, toast } from '../ui.js';
+import { append, errorBox, fmtDate, fmtDuration, fmtNum, formData, get, h, patch, post, sparkline, toast } from '../ui.js';
 import { Trainer } from '../trainer.js';
 import { contrastExercise, randomWords, weakExercise, wordsExercise } from '../words.js';
 import { LESSONS, lessonById } from '../course.js';
 import { FINGER_NAMES, fingerFor } from '../layout.js';
-import { refreshMe, state } from '../app.js';
+import { refreshMe, route, state } from '../app.js';
 
 const KIND_LABEL = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test', course: 'Kurs', focus: 'Fehlertraining' };
 
@@ -609,4 +609,32 @@ export async function settingsView(app) {
       h('p.muted.small', `Deine Ergebnisse werden am ${new Date(state.me.purgeDate).toLocaleDateString('de-DE')} automatisch gelöscht.`)
     )
   );
+}
+
+// Schüler ohne Klasse (Anmeldung über VIDIS): Klassencode der Lehrkraft eingeben.
+export function joinClassView(app) {
+  const form = h(
+    'form.card.narrow',
+    {
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const showError = errorBox(form);
+        try {
+          const cls = await post('/api/me/join', formData(form));
+          toast(`Willkommen in der Klasse ${cls.name}`);
+          state.me = null;
+          location.hash = '#/';
+          route();
+        } catch (err) {
+          showError(err.message);
+        }
+      },
+    },
+    h('img.login-ninja', { src: '/img/ninja.svg', alt: '' }),
+    h('h1', `Hallo ${state.me.displayName}!`),
+    h('p', 'Bevor es losgeht: Gib den Klassencode ein, den dir deine Lehrkraft gibt.'),
+    h('label', 'Klassencode', h('input.join-input', { name: 'code', required: true, maxlength: 9, autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', placeholder: 'ABC-123', autofocus: true })),
+    h('button.primary', { type: 'submit' }, 'Beitreten')
+  );
+  app.replaceChildren(form);
 }

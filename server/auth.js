@@ -17,14 +17,26 @@ export function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(actual, expected);
 }
 
-export function createSession(db, userId) {
+export function createSession(db, userId, idToken = null) {
   const token = crypto.randomBytes(32).toString('base64url');
-  db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(
+  db.prepare('INSERT INTO sessions (token, user_id, expires_at, id_token) VALUES (?, ?, ?, ?)').run(
     token,
     userId,
-    Date.now() + SESSION_DAYS * 864e5
+    Date.now() + SESSION_DAYS * 864e5,
+    idToken
   );
   return token;
+}
+
+// Beitrittscode für eine Klasse, z. B. "KF7-M2P" (ohne verwechselbare Zeichen).
+export function generateJoinCode(db) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  for (;;) {
+    let c = '';
+    for (let i = 0; i < 6; i++) c += pick(chars);
+    c = `${c.slice(0, 3)}-${c.slice(3)}`;
+    if (!db.prepare('SELECT 1 FROM classes WHERE join_code = ?').get(c)) return c;
+  }
 }
 
 export function sessionUser(db, token) {
@@ -32,7 +44,7 @@ export function sessionUser(db, token) {
   return (
     db
       .prepare(
-        `SELECT u.id, u.role, u.username, u.display_name, u.class_id, u.onboarding_done, u.prefs, u.xp
+        `SELECT u.id, u.role, u.username, u.display_name, u.class_id, u.onboarding_done, u.prefs, u.xp, u.school_id, u.external_id
          FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ? AND s.expires_at > ?`
       )
       .get(token, Date.now()) || null

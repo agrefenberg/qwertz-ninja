@@ -122,11 +122,35 @@ export async function classView(app, { id }) {
       'section.card',
       h('h2', `Schüler (${cls.students.length})`),
       cls.students.length ? studentTable(cls, reload) : h('p.muted', 'Noch keine Schülerzugänge.'),
+      state.setup?.vidis ? joinCodeBox(cls) : null,
       h('h3', 'Neue Zugänge'),
       h('p.muted.small', 'Die App erzeugt Benutzernamen mit Pseudonym und Passwort, ohne Namen oder E-Mail-Adressen. Du bekommst eine Liste zum Ausdrucken und Zerschneiden. Die Passwörter sind nur jetzt sichtbar.'),
       createForm
     )
   );
+}
+
+// Klassencode für Schüler, die sich über VIDIS anmelden und noch keiner Klasse angehören.
+function joinCodeBox(cls) {
+  const box = h('div');
+  const render = (code) => {
+    const set = (remove) => async () => {
+      try {
+        render((await post(`/api/classes/${cls.id}/join-code`, { remove })).joinCode);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+    box.replaceChildren(
+      h('h3', 'Beitritt über VIDIS'),
+      h('p.muted.small', 'Wer sich über VIDIS anmeldet, gehört zuerst keiner Klasse an. Mit diesem Code treten die Schülerinnen und Schüler deiner Klasse bei.'),
+      code
+        ? h('div.toolbar', h('span.join-code', code), h('button.small', { onclick: set(false) }, 'Neuer Code'), h('button.small', { onclick: set(true) }, 'Code abschalten'))
+        : h('button', { onclick: set(false) }, 'Klassencode erzeugen')
+    );
+  };
+  render(cls.joinCode);
+  return box;
 }
 
 function studentTable(cls, reload) {
@@ -574,6 +598,10 @@ export async function schemesView(app) {
 // ---------- Konto ----------
 
 export function accountView(app) {
+  if (state.me.vidis) {
+    append(app, h('h1', 'Konto'), h('p', `Du bist über VIDIS angemeldet (${state.me.displayName}). Dein Passwort verwaltest du dort.`));
+    return;
+  }
   const form = h(
     'form.card.narrow',
     {

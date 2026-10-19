@@ -440,6 +440,68 @@ button.link {
 .tag-test {
   background: var(--coral);
 }
+.tag-ok {
+  background: var(--green);
+}
+
+/* Betreiber, Klassencode, VIDIS */
+.join-code {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  background: var(--yellow);
+  border-radius: var(--radius-s);
+  padding: 0.3rem 0.9rem;
+  display: inline-block;
+}
+.join-input {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 1.4rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  max-width: 12rem;
+}
+.vidis-login {
+  width: 100%;
+  margin-top: 0.4rem;
+}
+.or-line {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 1rem 0 0.4rem;
+}
+.or-line::before,
+.or-line::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+.mode-choice {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.4rem 0 1rem;
+}
+.mode-choice label {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  background: var(--soft);
+  border-radius: var(--radius-s);
+  padding: 0.8rem 1rem;
+  font-weight: 400;
+  cursor: pointer;
+}
+.mode-choice input {
+  width: auto;
+  margin-top: 0.25rem;
+}
+.mode-choice b {
+  display: block;
+}
 
 kbd {
   display: inline-flex;

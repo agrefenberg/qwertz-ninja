@@ -95,6 +95,29 @@ Unter Admin › Einstellungen lassen sich Demodaten anlegen und wieder entfernen
 
 Es genügt, den Ordner `data` zu sichern. `./sicherung.sh` legt im laufenden Betrieb eine konsistente Kopie in `data/sicherung` an (die letzten 14 bleiben) und kopiert sie zusätzlich in `QN_BACKUP_DIR` aus `.env`, z. B. auf einen USB-Stick. Das Einrichtungsskript startet die Sicherung jede Nacht um 2:30 Uhr. Wiederherstellen: App stoppen, die gewünschte Sicherung als `data/qwertz-ninja.sqlite` zurückkopieren (vorhandene `-wal`- und `-shm`-Dateien daneben löschen), wieder starten.
 
+### Mehrere Schulen (Betreiber)
+
+Bei der Einrichtung lässt sich statt „Für eine Schule“ auch „Für mehrere Schulen“ wählen. Dann ist das erste Konto der Betreiber. Er trägt unter „Einstellungen“ seine Angaben ein (sie stehen im AVV) und legt unter „Schulen“ jede Schule mit einem Admin-Konto an. Jede Schule hat eigene Lehrkräfte, Klassen, Texte, Einstellungen und ein eigenes Schuljahresende; die Schulen sehen nichts voneinander. Der Betreiber sieht keine Ergebnisse.
+
+Für jede Schule erzeugt das Programm einen vorausgefüllten **Vertrag zur Auftragsverarbeitung** (Art. 28 DSGVO) mit Anlage zu den technischen und organisatorischen Maßnahmen als PDF. Bis der Betreiber den unterschriebenen AVV mit Datum einträgt, können sich nur die Admins der Schule anmelden. Der AVV ist eine Vorlage und sollte vor der Unterzeichnung von der oder dem Datenschutzbeauftragten der Schule geprüft werden.
+
+Bestehende Installationen laufen unverändert als eine Schule weiter.
+
+### Anmeldung über VIDIS
+
+Im Mehrschulbetrieb können sich Lehrkräfte und Schüler über [VIDIS](https://www.vidis.schule) anmelden (OpenID Connect). VIDIS liefert nur eine pseudonyme Kennung, die Rolle und die Schulkennung, bei Lehrkräften gegebenenfalls den Namen. Angemeldet wird nur, wessen Schulkennung beim Betreiber mit unterschriebenem AVV eingetragen ist. Schüler treten beim ersten Mal mit dem Klassencode ihrer Lehrkraft einer Klasse bei; den Code erzeugt die Lehrkraft in der Klassenansicht.
+
+Voraussetzung ist die Registrierung des Angebots bei der FWU (vidis@fwu.de). Die Zugangsdaten kommen in die Datei `.env`:
+
+```sh
+QN_PUBLIC_URL=https://ninja.example.de
+QN_VIDIS_ISSUER=https://aai-test.vidis.schule/auth/realms/vidis   # zuerst das Testsystem
+QN_VIDIS_CLIENT_ID=…
+QN_VIDIS_CLIENT_SECRET=…
+```
+
+Als Rückleitungsadresse (Redirect-URI) bei der FWU angeben: `https://ninja.example.de/api/vidis/callback`. Für die Vorauswahl des Bundeslands kann ein Link auf `/api/vidis/login?vidis_idp_hint=…` gesetzt werden.
+
 ## Entwicklung
 
 ```sh

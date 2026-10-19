@@ -9,11 +9,28 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+-- Eine Installation kann eine Schule (mode = single) oder mehrere Schulen (mode = multi) bedienen.
+-- Im Mehrschulbetrieb ist der Betreiber ein Admin ohne Schule (school_id NULL).
+CREATE TABLE IF NOT EXISTS schools (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  school_code TEXT UNIQUE,
+  address TEXT NOT NULL DEFAULT '',
+  head TEXT NOT NULL DEFAULT '',
+  contact TEXT NOT NULL DEFAULT '',
+  year_end TEXT NOT NULL DEFAULT '07-31',
+  privacy_note TEXT NOT NULL DEFAULT '',
+  last_purge INTEGER NOT NULL DEFAULT 0,
+  avv_signed_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS classes (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   teacher_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   leaderboard_enabled INTEGER NOT NULL DEFAULT 0,
+  join_code TEXT UNIQUE,
   created_at INTEGER NOT NULL
 );
 
@@ -27,13 +44,25 @@ CREATE TABLE IF NOT EXISTS users (
   onboarding_done INTEGER NOT NULL DEFAULT 0,
   prefs TEXT NOT NULL DEFAULT '{}',
   xp INTEGER NOT NULL DEFAULT 0,
+  school_id INTEGER REFERENCES schools(id) ON DELETE CASCADE,
+  external_id TEXT,
   created_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires_at INTEGER NOT NULL
+  expires_at INTEGER NOT NULL,
+  id_token TEXT
+);
+
+-- Laufende Anmeldungen über VIDIS (OpenID Connect), nur wenige Minuten gültig
+CREATE TABLE IF NOT EXISTS oidc_states (
+  state TEXT PRIMARY KEY,
+  nonce TEXT NOT NULL,
+  verifier TEXT NOT NULL,
+  browser TEXT NOT NULL,
+  created_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS texts (
@@ -166,12 +195,38 @@ export function openDb(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
-  // Spalten, die nach der ersten Version dazugekommen sind
-  const cols = db.prepare('PRAGMA table_info(pln_attempts)').all().map((c) => c.name);
-  if (!cols.includes('left_count')) db.exec('ALTER TABLE pln_attempts ADD COLUMN left_count INTEGER NOT NULL DEFAULT 0');
+  migrate(db);
   seedTexts(db);
   return db;
 }
+
+// Spalten, die nach der ersten Version dazugekommen sind
+function migrate(db) {
+  const has = (table, col) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
+  if (!has('pln_attempts', 'left_count')) db.exec('ALTER TABLE pln_attempts ADD COLUMN left_count INTEGER NOT NULL DEFAULT 0');
+  if (!has('users', 'school_id')) db.exec('ALTER TABLE users ADD COLUMN school_id INTEGER REFERENCES schools(id) ON DELETE CASCADE');
+  if (!has('users', 'external_id')) db.exec('ALTER TABLE users ADD COLUMN external_id TEXT');
+  if (!has('classes', 'join_code')) db.exec('ALTER TABLE classes ADD COLUMN join_code TEXT');
+  if (!has('sessions', 'id_token')) db.exec('ALTER TABLE sessions ADD COLUMN id_token TEXT');
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_external ON users(external_id) WHERE external_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS classes_join_code ON classes(join_code) WHERE join_code IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS users_school ON users(school_id);
+  `);
+  // Bestehende Installation mit einer Schule: Schuldaten aus den Einstellungen in die Tabelle schools übernehmen.
+  const hasUsers = db.prepare('SELECT 1 FROM users LIMIT 1').get();
+  if (hasUsers && !getSetting(db, 'mode')) {
+    tx(db, () => {
+      const r = db
+        .prepare('INSERT INTO schools (name, year_end, privacy_note, last_purge, created_at) VALUES (?, ?, ?, ?, ?)')
+        .run(getSetting(db, 'school_name', 'Meine Schule'), getSetting(db, 'year_end', '07-31'), getSetting(db, 'privacy_note', ''), Number(getSetting(db, 'last_purge', '0')), Date.now());
+      db.prepare('UPDATE users SET school_id = ? WHERE school_id IS NULL').run(Number(r.lastInsertRowid));
+      setSetting(db, 'mode', 'single');
+    });
+  }
+}
+
+export const isMulti = (db) => getSetting(db, 'mode') === 'multi';
 
 function seedTexts(db) {
   const insert = db.prepare(
