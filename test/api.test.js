@@ -222,12 +222,15 @@ test('Gesamtablauf: Einrichtung, Lehrkraft, Klasse, Übung, Test, Note, Export',
 
 test('Löschung zum Schuljahresende', () => {
   const d = openDb(':memory:');
-  d.prepare("INSERT INTO settings (key, value) VALUES ('year_end', '07-31')").run();
+  d.prepare("INSERT INTO schools (name, year_end, created_at) VALUES ('S1', '07-31', 0), ('S2', '06-30', 0)").run();
   // Frische Installation löscht nichts.
   assert.equal(purgeIfDue(d, new Date(2026, 5, 1)), false);
-  d.prepare("INSERT INTO users (role, username, display_name, password_hash, xp, created_at) VALUES ('student', 'a', 'A', 'x', 500, 0)").run();
+  d.prepare("INSERT INTO users (role, username, display_name, password_hash, xp, school_id, created_at) VALUES ('student', 'a', 'A', 'x', 500, 1, 0)").run();
   d.prepare("INSERT INTO results (user_id, kind, duration_ms, gross_chars, correct_chars, errors, apm, wpm, error_rate, created_at) VALUES (1, 'text', 1, 1, 1, 0, 1, 1, 0, 0)").run();
-  assert.equal(purgeIfDue(d, new Date(2026, 6, 31, 12)), false);
+  // Schule 2 endet am 30.06.: Ihre Löschung lässt die Ergebnisse von Schule 1 stehen.
+  assert.equal(purgeIfDue(d, new Date(2026, 6, 31, 12)), true);
+  assert.equal(d.prepare('SELECT COUNT(*) AS n FROM results').get().n, 1);
+  assert.equal(purgeIfDue(d, new Date(2026, 6, 31, 13)), false);
   assert.equal(purgeIfDue(d, new Date(2026, 7, 1, 1)), true);
   assert.equal(d.prepare('SELECT COUNT(*) AS n FROM results').get().n, 0);
   assert.equal(d.prepare('SELECT xp FROM users').get().xp, 0);
@@ -238,18 +241,24 @@ test('Löschung zum Schuljahresende', () => {
 test('Demodaten anlegen und entfernen', async () => {
   const { createDemo, removeDemo, hasDemo } = await import('../server/demo.js');
   const d = openDb(':memory:');
-  d.prepare("INSERT INTO users (role, username, display_name, password_hash, created_at) VALUES ('teacher', 'echt', 'Echte Lehrkraft', 'x', 0)").run();
+  d.prepare("INSERT INTO schools (name, created_at) VALUES ('S1', 0), ('S2', 0)").run();
+  d.prepare("INSERT INTO users (role, username, display_name, password_hash, school_id, created_at) VALUES ('teacher', 'echt', 'Echte Lehrkraft', 'x', 1, 0)").run();
   const t0 = Date.now();
-  const s = createDemo(d);
+  const s = createDemo(d, 1);
   assert.ok(Date.now() - t0 < 20000);
   assert.equal(s.teachers.length, 4);
   assert.equal(s.classes, 7);
   assert.ok(s.students > 130);
   assert.ok(s.results > 1000);
-  assert.ok(hasDemo(d));
+  assert.ok(hasDemo(d, 1));
+  assert.equal(hasDemo(d, 2), false);
   assert.ok(d.prepare('SELECT COUNT(*) AS n FROM badges').get().n > 100);
-  removeDemo(d);
-  assert.equal(hasDemo(d), false);
+  // Demodaten einer zweiten Schule kommen der ersten nicht in die Quere.
+  assert.deepEqual(createDemo(d, 2).teachers, ['demo2-huber', 'demo2-maier', 'demo2-yilmaz', 'demo2-schmid']);
+  removeDemo(d, 2);
+  assert.ok(hasDemo(d, 1));
+  removeDemo(d, 1);
+  assert.equal(hasDemo(d, 1), false);
   assert.equal(d.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'student'").get().n, 0);
   assert.equal(d.prepare('SELECT COUNT(*) AS n FROM results').get().n, 0);
   assert.equal(d.prepare("SELECT COUNT(*) AS n FROM users WHERE username = 'echt'").get().n, 1);

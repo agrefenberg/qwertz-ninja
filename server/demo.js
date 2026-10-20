@@ -5,29 +5,29 @@ import { metrics } from '../public/js/scoring.js';
 import { LESSONS } from '../public/js/course.js';
 import { WORDS } from '../public/js/words.js';
 
-// Demodaten zum Ausprobieren. Alle Demo-Lehrkräfte beginnen mit "demo-"; beim Entfernen
-// werden sie mit ihren Klassen, Schülerkonten und Ergebnissen gelöscht.
+// Demodaten zum Ausprobieren, je Schule. Alle Demo-Lehrkräfte beginnen mit "demo-" (bei weiteren
+// Schulen "demo<Nr>-"); beim Entfernen werden sie mit ihren Klassen, Schülerkonten und Ergebnissen gelöscht.
 export const DEMO_PASSWORD = 'ninja-demo';
-const PREFIX = 'demo-';
+export const prefixFor = (schoolId) => (schoolId === 1 ? 'demo-' : `demo${schoolId}-`);
 
 const TEACHERS = [
-  { username: 'demo-huber', name: 'Frau Huber', classes: ['7a', '8b'] },
-  { username: 'demo-maier', name: 'Herr Maier', classes: ['9a', '9c'] },
-  { username: 'demo-yilmaz', name: 'Frau Yılmaz', classes: ['10a'] },
-  { username: 'demo-schmid', name: 'Herr Schmid', classes: ['10b', '10c'] },
+  { username: 'huber', name: 'Frau Huber', classes: ['7a', '8b'] },
+  { username: 'maier', name: 'Herr Maier', classes: ['9a', '9c'] },
+  { username: 'yilmaz', name: 'Frau Yılmaz', classes: ['10a'] },
+  { username: 'schmid', name: 'Herr Schmid', classes: ['10b', '10c'] },
 ];
 const WEAK_POOL = ['ö', 'ä', 'ü', 'ß', 'y', 'x', 'q', 'p', 'z', 'c', 'v', 'b', ',', '.', '-', 'Ä', 'Ü', 'Z'];
 const COMMON = 'enristadhulgmocbfkwzpvüäößjyxq ,.ENRISTADHULGMOCBFKWZ'.split('');
 const KINDS = ['text', 'text', 'text', 'words', 'words', 'weak'];
 const DAY = 864e5;
 
-export function hasDemo(db) {
-  return !!db.prepare("SELECT 1 FROM users WHERE role = 'teacher' AND username LIKE 'demo-%'").get();
+export function hasDemo(db, schoolId) {
+  return !!db.prepare("SELECT 1 FROM users WHERE role = 'teacher' AND school_id = ? AND username LIKE ?").get(schoolId, `${prefixFor(schoolId)}%`);
 }
 
-export function removeDemo(db) {
+export function removeDemo(db, schoolId) {
   tx(db, () => {
-    const teachers = db.prepare("SELECT id FROM users WHERE role = 'teacher' AND username LIKE ?").all(`${PREFIX}%`);
+    const teachers = db.prepare("SELECT id FROM users WHERE role = 'teacher' AND school_id = ? AND username LIKE ?").all(schoolId, `${prefixFor(schoolId)}%`);
     for (const t of teachers) {
       for (const c of db.prepare('SELECT id FROM classes WHERE teacher_id = ?').all(t.id)) db.prepare('DELETE FROM users WHERE class_id = ?').run(c.id);
       db.prepare('DELETE FROM users WHERE id = ?').run(t.id);
@@ -46,14 +46,14 @@ function gauss() {
   return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
 }
 
-export function createDemo(db, now = Date.now()) {
-  if (hasDemo(db)) removeDemo(db);
+export function createDemo(db, schoolId, now = Date.now()) {
+  if (hasDemo(db, schoolId)) removeDemo(db, schoolId);
   const hash = hashPassword(DEMO_PASSWORD);
   const summary = { teachers: [], classes: 0, students: 0, results: 0, sampleStudents: [] };
 
   tx(db, () => {
     const insUser = db.prepare(
-      'INSERT INTO users (role, username, display_name, password_hash, class_id, onboarding_done, xp, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)'
+      `INSERT INTO users (role, username, display_name, password_hash, class_id, onboarding_done, xp, school_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ${Number(schoolId)}, ?)`
     );
     const insResult = db.prepare(
       `INSERT INTO results (user_id, assignment_id, kind, duration_ms, gross_chars, correct_chars, errors, corrected_errors, apm, wpm, error_rate, completed, created_at)
@@ -63,8 +63,8 @@ export function createDemo(db, now = Date.now()) {
     const texts = db.prepare('SELECT id, length(content) AS len FROM texts WHERE owner_id IS NULL').all();
 
     for (const t of TEACHERS) {
-      const teacherId = Number(insUser.run('teacher', t.username, `${t.name} (Demo)`, hash, null, 1, now - 60 * DAY).lastInsertRowid);
-      summary.teachers.push(t.username);
+      const teacherId = Number(insUser.run('teacher', prefixFor(schoolId) + t.username, `${t.name} (Demo)`, hash, null, 1, now - 60 * DAY).lastInsertRowid);
+      summary.teachers.push(prefixFor(schoolId) + t.username);
       const schemeId = Number(
         db
           .prepare('INSERT INTO grading_schemes (teacher_id, name, error_penalty, thresholds, created_at) VALUES (?, ?, ?, ?, ?)')

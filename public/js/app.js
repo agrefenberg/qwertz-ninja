@@ -5,6 +5,7 @@ import { basicsView } from './views/basics.js';
 import * as teacher from './views/teacher.js';
 import * as admin from './views/admin.js';
 import { plnSheetView, plnView, studentPlnView } from './views/pln.js';
+import * as operator from './views/operator.js';
 
 export const state = { me: null, setup: null, cleanup: null };
 
@@ -42,6 +43,12 @@ const ROUTES = {
     ['/einstellungen', admin.settingsView],
     ['/konto', teacher.accountView],
   ],
+  operator: [
+    ['/', operator.schoolsView],
+    ['/schule/:id', operator.schoolView],
+    ['/einstellungen', operator.operatorSettingsView],
+    ['/konto', teacher.accountView],
+  ],
 };
 
 const NAV = {
@@ -61,6 +68,11 @@ const NAV = {
   ],
   admin: [
     ['#/', 'Lehrkräfte'],
+    ['#/einstellungen', 'Einstellungen'],
+    ['#/konto', 'Konto'],
+  ],
+  operator: [
+    ['#/', 'Schulen'],
     ['#/einstellungen', 'Einstellungen'],
     ['#/konto', 'Konto'],
   ],
@@ -90,17 +102,22 @@ export async function refreshMe() {
 function renderNav() {
   const nav = document.getElementById('nav');
   nav.replaceChildren();
-  document.querySelector('.brand-name').textContent = state.setup?.schoolName && state.setup.schoolName !== 'QWERTZ Ninja' ? `QWERTZ Ninja · ${state.setup.schoolName}` : 'QWERTZ Ninja';
+  const name = state.me?.schoolName || state.setup?.schoolName || '';
+  document.querySelector('.brand-name').textContent = !name || name.includes('QWERTZ Ninja') ? name || 'QWERTZ Ninja' : `QWERTZ Ninja · ${name}`;
   if (!state.me) return;
   const current = location.hash || '#/';
   const section = NAV[state.me.role].filter(([href]) => href !== '#/' && current.startsWith(href)).at(-1)?.[0] || (current === '#/' ? '#/' : null);
+  // Schüler ohne Klasse sehen nur die Beitrittsseite, also kein Menü.
+  const showMenu = !(state.me.role === 'student' && !state.me.class);
   nav.append(
-    h('span.nav-pill', NAV[state.me.role].map(([href, label]) => h('a', { href, class: section === href ? 'active' : null }, label))),
+    showMenu ? h('span.nav-pill', NAV[state.me.role].map(([href, label]) => h('a', { href, class: section === href ? 'active' : null }, label))) : '',
     h('span.nav-user', h('span.avatar', state.me.displayName.slice(0, 1)), state.me.displayName),
     h('button.link', {
       onclick: async () => {
-        await post('/api/logout');
+        const res = await post('/api/logout');
         state.me = null;
+        // Nach einer Anmeldung über VIDIS auch dort abmelden.
+        if (res.redirect) return location.assign(res.redirect);
         location.hash = '#/';
         route();
       },
@@ -121,6 +138,8 @@ export async function route() {
     if (!state.me) await refreshMe();
     renderNav();
     if (!state.me) return loginView(app);
+    // Über VIDIS angemeldete Schüler treten zuerst mit dem Code ihrer Lehrkraft einer Klasse bei.
+    if (state.me.role === 'student' && !state.me.class) return student.joinClassView(app);
     // Lernende wiederholen beim ersten Anmelden die Grundstellung.
     if (state.me.role === 'student' && !state.me.onboardingDone && path !== '/grundstellung') {
       location.hash = '#/grundstellung';

@@ -8,6 +8,12 @@ services:
     restart: unless-stopped
     environment:
       SECURE_COOKIES: "1"
+      QN_DOMAIN: ${QN_DOMAIN:-}
+      # Nur für die Anmeldung über VIDIS (Mehrschulbetrieb), Werte von der FWU
+      QN_PUBLIC_URL: ${QN_PUBLIC_URL:-}
+      QN_VIDIS_ISSUER: ${QN_VIDIS_ISSUER:-}
+      QN_VIDIS_CLIENT_ID: ${QN_VIDIS_CLIENT_ID:-}
+      QN_VIDIS_CLIENT_SECRET: ${QN_VIDIS_CLIENT_SECRET:-}
     volumes:
       - ./data:/data
 
