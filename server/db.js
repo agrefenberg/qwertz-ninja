@@ -53,7 +53,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expires_at INTEGER NOT NULL,
-  id_token TEXT
+  id_token TEXT,
+  -- Lehrkraft in der Schüleransicht: Klasse, deren Sicht sie gerade sieht
+  preview_class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL
 );
 
 -- Laufende Anmeldungen über VIDIS (OpenID Connect), nur wenige Minuten gültig
@@ -208,6 +210,7 @@ function migrate(db) {
   if (!has('users', 'external_id')) db.exec('ALTER TABLE users ADD COLUMN external_id TEXT');
   if (!has('classes', 'join_code')) db.exec('ALTER TABLE classes ADD COLUMN join_code TEXT');
   if (!has('sessions', 'id_token')) db.exec('ALTER TABLE sessions ADD COLUMN id_token TEXT');
+  if (!has('sessions', 'preview_class_id')) db.exec('ALTER TABLE sessions ADD COLUMN preview_class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL');
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_external ON users(external_id) WHERE external_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS classes_join_code ON classes(join_code) WHERE join_code IS NOT NULL;

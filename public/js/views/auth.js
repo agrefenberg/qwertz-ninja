@@ -1,4 +1,4 @@
-import { append, errorBox, formData, h, post } from '../ui.js';
+import { append, errorBox, formData, h, passwordInput, post } from '../ui.js';
 import { route, state } from '../app.js';
 
 const VIDIS_ERRORS = {
@@ -34,7 +34,7 @@ export function loginView(app) {
     h('img.login-ninja', { src: '/img/ninja.svg', alt: '' }),
     h('h1', 'Anmelden'),
     h('label', 'Benutzername', h('input', { name: 'username', autocomplete: 'username', required: true, autofocus: true, autocapitalize: 'off' })),
-    h('label', 'Passwort', h('input', { name: 'password', type: 'password', autocomplete: 'current-password', required: true })),
+    h('label', 'Passwort', passwordInput({ name: 'password', autocomplete: 'current-password', required: true })),
     h('button.primary', { type: 'submit' }, 'Anmelden'),
     state.setup?.vidis
       ? [h('div.or-line', 'oder'), h('a.button.vidis-login', { href: '/api/vidis/login' }, 'Anmelden mit VIDIS (Schul-Login)')]
@@ -79,8 +79,8 @@ export function setupView(app) {
     ),
     h('label', nameLabel, h('input', { name: 'schoolName', required: true, maxlength: 120 })),
     h('label', 'Benutzername (Admin)', h('input', { name: 'username', required: true, minlength: 3, maxlength: 40, autocapitalize: 'off' })),
-    h('label', 'Passwort (mindestens 10 Zeichen)', h('input', { name: 'password', type: 'password', required: true, minlength: 10, autocomplete: 'new-password' })),
-    h('label', 'Passwort wiederholen', h('input', { name: 'password2', type: 'password', required: true, minlength: 10, autocomplete: 'new-password' })),
+    h('label', 'Passwort (mindestens 10 Zeichen)', passwordInput({ name: 'password', required: true, minlength: 10, autocomplete: 'new-password' })),
+    h('label', 'Passwort wiederholen', passwordInput({ name: 'password2', required: true, minlength: 10, autocomplete: 'new-password' })),
     h('button.primary', { type: 'submit' }, 'Einrichten')
   );
   app.replaceChildren(form);
