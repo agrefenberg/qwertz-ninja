@@ -50,8 +50,10 @@ function studentPage(doc, { school, className, pln, settings: st, scheme, e }) {
   header(doc, { school, className, pln, settings: st });
   const end = Math.min(attempt.submitted_at || Infinity, attempt.started_at + attempt.duration_ms);
 
-  doc.font('Helvetica-Bold').fontSize(11).fillColor('#000').text(`Pseudonym: ${student.display_name}`, { continued: true });
-  doc.font('Helvetica').text(`   (Benutzername ${student.username})`);
+  // Der echte Name wird nur von Hand eingetragen, auf dem Server gibt es ihn nicht.
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#000').text('Name: ', { continued: true });
+  doc.font('Helvetica').text('______________________________________');
+  doc.fontSize(9.5).fillColor(GREY).text(`Pseudonym ${student.display_name} · Benutzername ${student.username}`).fillColor('#000').fontSize(11);
   doc.text(`Datum: ${date(attempt.started_at)}   Beginn: ${time(attempt.started_at)} Uhr   Ende: ${time(end)} Uhr`);
   if (attempt.lrs) doc.text(`Nachteilsausgleich: ${[st.lrsTimePct ? `${st.lrsTimePct} % mehr Zeit` : '', st.mode === 'count' && st.lrsLinesPct ? `${st.lrsLinesPct} % weniger Zeilen` : ''].filter(Boolean).join(', ') || 'ja'}`);
   if (attempt.left_count) doc.fillColor(RED).text(`Prüfungsfenster während des PLN ${attempt.left_count}× verlassen.`).fillColor('#000');
