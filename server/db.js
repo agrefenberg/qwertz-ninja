@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS plns (
   return_rule TEXT NOT NULL DEFAULT 'first',
   grading_scheme_id INTEGER REFERENCES grading_schemes(id) ON DELETE SET NULL,
   note1_chars INTEGER NOT NULL,
+  settings TEXT,
   status TEXT NOT NULL DEFAULT 'draft',
   created_at INTEGER NOT NULL
 );
@@ -148,6 +149,16 @@ CREATE TABLE IF NOT EXISTS pln_attempts (
   saved_at INTEGER,
   submitted_at INTEGER,
   left_count INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER,
+  PRIMARY KEY (pln_id, user_id)
+);
+
+-- Je PLN und Person: Nachteilsausgleich (LRS/Legasthenie) und Zehn-Finger-System nicht angewendet (Note 6)
+CREATE TABLE IF NOT EXISTS pln_flags (
+  pln_id INTEGER NOT NULL REFERENCES plns(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lrs INTEGER NOT NULL DEFAULT 0,
+  no_touch INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (pln_id, user_id)
 );
 
@@ -215,6 +226,8 @@ export function openDb(file) {
 function migrate(db) {
   const has = (table, col) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
   if (!has('pln_attempts', 'left_count')) db.exec('ALTER TABLE pln_attempts ADD COLUMN left_count INTEGER NOT NULL DEFAULT 0');
+  if (!has('pln_attempts', 'duration_ms')) db.exec('ALTER TABLE pln_attempts ADD COLUMN duration_ms INTEGER');
+  if (!has('plns', 'settings')) db.exec('ALTER TABLE plns ADD COLUMN settings TEXT');
   if (!has('users', 'school_id')) db.exec('ALTER TABLE users ADD COLUMN school_id INTEGER REFERENCES schools(id) ON DELETE CASCADE');
   if (!has('users', 'external_id')) db.exec('ALTER TABLE users ADD COLUMN external_id TEXT');
   if (!has('classes', 'join_code')) db.exec('ALTER TABLE classes ADD COLUMN join_code TEXT');

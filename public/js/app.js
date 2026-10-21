@@ -4,7 +4,7 @@ import * as student from './views/student.js';
 import { basicsView } from './views/basics.js';
 import * as teacher from './views/teacher.js';
 import * as admin from './views/admin.js';
-import { plnSheetView, plnView, studentPlnView } from './views/pln.js';
+import { plnSheetNtaView, plnSheetView, plnView, studentPlnView } from './views/pln.js';
 import * as operator from './views/operator.js';
 
 export const state = { me: null, setup: null, cleanup: null };
@@ -33,6 +33,7 @@ const ROUTES = {
     ['/aufgabe/:id', teacher.assignmentResultsView],
     ['/pln/:id', plnView],
     ['/pln/:id/vorlage', plnSheetView],
+    ['/pln/:id/vorlage-nta', plnSheetNtaView],
     ['/schueler/:id', teacher.studentView],
     ['/texte', teacher.textsView],
     ['/notenschluessel', teacher.schemesView],
