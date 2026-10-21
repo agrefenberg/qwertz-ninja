@@ -44,7 +44,7 @@ export function sessionUser(db, token) {
   return (
     db
       .prepare(
-        `SELECT u.id, u.role, u.username, u.display_name, u.class_id, u.onboarding_done, u.prefs, u.xp, u.school_id, u.external_id
+        `SELECT u.id, u.role, u.username, u.display_name, u.class_id, u.onboarding_done, u.prefs, u.xp, u.school_id, u.external_id, s.preview_class_id
          FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ? AND s.expires_at > ?`
       )
       .get(token, Date.now()) || null

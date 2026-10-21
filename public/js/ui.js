@@ -76,6 +76,52 @@ export function toast(msg, kind = 'info') {
   }, 3500);
 }
 
+// Passwortfeld mit Augen-Knopf: zeigt das Passwort auf Wunsch kurz an und verbirgt es nach 10 Sekunden wieder.
+export function passwordInput(attrs) {
+  const input = h('input', { ...attrs, type: 'password' });
+  let timer = null;
+  const hide = () => {
+    clearTimeout(timer);
+    input.type = 'password';
+    btn.replaceChildren(eyeIcon(true));
+    btn.setAttribute('aria-label', 'Passwort anzeigen');
+    btn.setAttribute('aria-pressed', 'false');
+  };
+  const btn = h('button.eye', {
+    type: 'button',
+    onclick: () => {
+      if (input.type === 'text') return hide();
+      input.type = 'text';
+      btn.replaceChildren(eyeIcon(false));
+      btn.setAttribute('aria-label', 'Passwort verbergen');
+      btn.setAttribute('aria-pressed', 'true');
+      timer = setTimeout(hide, 10000);
+    },
+  });
+  hide();
+  // Beim Verlassen des Felds wieder verbergen (außer der Klick ging auf den Augen-Knopf).
+  input.addEventListener('blur', (e) => {
+    if (e.relatedTarget !== btn) hide();
+  });
+  return h('span.password-field', input, btn);
+}
+
+// Offenes Auge: Passwort anzeigen. Durchgestrichenes Auge: wieder verbergen.
+function eyeIcon(open) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const paths = ['M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z', 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'];
+  if (!open) paths.push('M4 4l16 16');
+  for (const d of paths) {
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', d);
+    svg.append(p);
+  }
+  return svg;
+}
+
 // Formular-Werte als Objekt.
 export function formData(form) {
   return Object.fromEntries(new FormData(form).entries());

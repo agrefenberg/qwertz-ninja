@@ -188,6 +188,29 @@ test('Gesamtablauf: Einrichtung, Lehrkraft, Klasse, Übung, Test, Note, Export',
   await teacher.patch(`/api/classes/${classId}`, { leaderboard: true });
   assert.equal((await s1.get('/api/leaderboard')).data.enabled, true);
 
+  // Schüleransicht: Lehrkraft sieht die Klasse wie ein Schüler, ohne sich abzumelden.
+  assert.equal((await teacher.post('/api/me/student-view', { classId: 9999 })).status, 400);
+  assert.equal((await teacher.post('/api/me/student-view', { classId })).status, 200);
+  const pv = (await teacher.get('/api/me')).data;
+  assert.equal(pv.role, 'student');
+  assert.equal(pv.class.id, classId);
+  assert.equal(pv.preview.className, '10b');
+  assert.equal((await teacher.get('/api/classes')).status, 403, 'keine Lehrerfunktionen in der Schüleransicht');
+  assert.ok((await teacher.get('/api/me/assignments')).data.some((x) => x.id === testA.data.id));
+  assert.equal((await teacher.post('/api/me/join', { code: 'ABC-DEF' })).status, 400);
+  assert.equal((await teacher.post(`/api/tests/${testA.data.id}/start`)).status, 200);
+  assert.equal((await teacher.post('/api/results', { kind: 'text', durationMs: 60000, gross: 100, correct: 99, errors: 1 })).status, 200);
+  // Klasse wechseln geht auch aus der Schüleransicht.
+  assert.equal((await teacher.post('/api/me/student-view', { classId })).status, 200);
+  assert.equal((await s1.post('/api/me/student-view', { classId })).status, 403, 'Schüler dürfen nicht wechseln');
+  assert.equal((await teacher.del('/api/me/student-view')).status, 200);
+  assert.equal((await teacher.get('/api/me')).data.role, 'teacher');
+  assert.equal((await teacher.del('/api/me/student-view')).status, 400);
+  // Die Lehrkraft taucht nicht in Klassenliste und Testergebnissen auf, ihr Testversuch ist verworfen.
+  assert.equal((await teacher.get(`/api/classes/${classId}`)).data.students.length, 2);
+  assert.equal((await teacher.get(`/api/assignments/${testA.data.id}/results`)).data.rows.length, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM test_attempts WHERE user_id = ?').get(pv.id).n, 0);
+
   // Fremde Lehrkraft sieht die Klasse nicht.
   const t2 = await admin.post('/api/admin/teachers', { username: 'maier', displayName: 'Herr Maier' });
   const teacher2 = client();
