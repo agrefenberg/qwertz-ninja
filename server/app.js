@@ -89,6 +89,12 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     req.user = sessionUser(db, parseCookies(req.headers.cookie)[COOKIE]);
     // Im Mehrschulbetrieb ist der Admin ohne Schule der Betreiber.
     if (req.user && req.user.role === 'admin' && req.user.school_id == null) req.user.role = 'operator';
+    // Lehrkraft in der Schüleransicht: Sie ist für den Server eine Schülerin der gewählten eigenen Klasse.
+    // Ihr Konto selbst gehört keiner Klasse an, daher taucht sie in Listen und Auswertungen nicht auf.
+    if (req.user?.role === 'teacher' && req.user.preview_class_id) {
+      const cls = db.prepare('SELECT id, name FROM classes WHERE id = ? AND teacher_id = ?').get(req.user.preview_class_id, req.user.id);
+      if (cls) Object.assign(req.user, { role: 'student', class_id: cls.id, preview: { classId: cls.id, className: cls.name } });
+    }
     next();
   });
 
@@ -186,6 +192,34 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     res.json({ ok: true });
   });
 
+  // ---------- Schüleransicht für Lehrkräfte ----------
+
+  // Tests und PLN aus der Schüleransicht gelten nicht: beim Wechsel verwerfen, damit sie wiederholbar sind.
+  const discardPreviewAttempts = (userId) =>
+    tx(db, () => {
+      db.prepare('DELETE FROM test_attempts WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM pln_attempts WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM results WHERE user_id = ? AND assignment_id IS NOT NULL').run(userId);
+    });
+
+  // Auch in der Schüleransicht erlaubt, um die Klasse zu wechseln.
+  app.post('/api/me/student-view', auth(), (req, res) => {
+    if (req.user.role !== 'teacher' && !req.user.preview) throw forbidden();
+    const cls = db.prepare('SELECT id FROM classes WHERE id = ? AND teacher_id = ?').get(int(req.body.classId, { min: 1, name: 'Klasse' }), req.user.id);
+    if (!cls) throw bad('Lege zuerst eine Klasse an.');
+    discardPreviewAttempts(req.user.id);
+    db.prepare('UPDATE sessions SET preview_class_id = ? WHERE token = ?').run(cls.id, parseCookies(req.headers.cookie)[COOKIE]);
+    res.json({ ok: true });
+  });
+
+  // Auch aus der Schüleransicht heraus erreichbar (dort ist die Rolle "student").
+  app.delete('/api/me/student-view', auth(), (req, res) => {
+    if (!req.user.preview) throw bad('Du bist nicht in der Schüleransicht.');
+    discardPreviewAttempts(req.user.id);
+    db.prepare('UPDATE sessions SET preview_class_id = NULL WHERE token = ?').run(parseCookies(req.headers.cookie)[COOKIE]);
+    res.json({ ok: true });
+  });
+
   // ---------- Eigenes Profil ----------
 
   app.get('/api/me', auth(), (req, res) => {
@@ -209,6 +243,9 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       mode: isMulti(db) ? 'multi' : 'single',
       schoolActive: school ? schoolActive(school) : true,
       vidis: !!u.external_id,
+      preview: u.preview
+        ? { ...u.preview, classes: db.prepare('SELECT id, name FROM classes WHERE teacher_id = ? ORDER BY name').all(u.id) }
+        : null,
     });
   });
 
@@ -662,7 +699,7 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
 
   const joinAttempts = new Map();
   app.post('/api/me/join', auth('student'), (req, res) => {
-    if (req.user.class_id) throw bad('Du bist schon in einer Klasse.');
+    if (req.user.class_id || req.user.preview) throw bad('Du bist schon in einer Klasse.');
     const a = joinAttempts.get(req.user.id) || { n: 0, until: 0 };
     if (a.until > Date.now()) throw new HttpError(429, 'Zu viele Versuche. Bitte eine Minute warten.');
     const code = String(req.body.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -798,7 +835,8 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       db
         .prepare(
           `SELECT a.*, t.title AS text_title, g.name AS scheme_name,
-             (SELECT COUNT(DISTINCT r.user_id) FROM results r WHERE r.assignment_id = a.id AND r.completed = 1) AS done
+             (SELECT COUNT(DISTINCT r.user_id) FROM results r JOIN users u ON u.id = r.user_id
+              WHERE r.assignment_id = a.id AND r.completed = 1 AND u.class_id = a.class_id) AS done
            FROM assignments a JOIN texts t ON t.id = a.text_id LEFT JOIN grading_schemes g ON g.id = a.grading_scheme_id
            WHERE a.class_id = ? ORDER BY a.created_at DESC`
         )
@@ -1038,7 +1076,7 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     const rows = db
       .prepare(
         `SELECT p.id, p.title, p.format, p.return_rule, p.status, p.created_at, p.note1_chars, g.name AS scheme_name,
-           (SELECT COUNT(*) FROM pln_attempts a WHERE a.pln_id = p.id) AS started
+           (SELECT COUNT(*) FROM pln_attempts a JOIN users u ON u.id = a.user_id WHERE a.pln_id = p.id AND u.class_id = p.class_id) AS started
          FROM plns p LEFT JOIN grading_schemes g ON g.id = p.grading_scheme_id WHERE p.class_id = ? ORDER BY p.created_at DESC`
       )
       .all(cls.id);
@@ -1127,9 +1165,9 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     const entries = db
       .prepare(
         `SELECT u.display_name, u.username, a.started_at, a.submitted_at, a.left_count, a.typed FROM pln_attempts a JOIN users u ON u.id = a.user_id
-         WHERE a.pln_id = ? ORDER BY u.display_name`
+         WHERE a.pln_id = ? AND u.class_id = ? ORDER BY u.display_name`
       )
-      .all(p.id)
+      .all(p.id, p.class_id)
       .filter((a) => plnEnded(a, now))
       .map((a) => {
         const ev = evaluatePln(p.text, a.typed, p.return_rule);

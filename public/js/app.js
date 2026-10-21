@@ -1,4 +1,4 @@
-import { get, h, post } from './ui.js';
+import { del, get, h, post, toast } from './ui.js';
 import { loginView, setupView, privacyView } from './views/auth.js';
 import * as student from './views/student.js';
 import { basicsView } from './views/basics.js';
@@ -99,11 +99,59 @@ export async function refreshMe() {
   }
 }
 
+// Lehrkraft wechselt in die Schüleransicht einer eigenen Klasse (ohne Ab- und Anmelden).
+export async function enterStudentView(classId) {
+  if (classId == null) {
+    const classes = await get('/api/classes');
+    if (!classes.length) return toast('Lege zuerst eine Klasse an.', 'error');
+    let last = null;
+    try {
+      last = Number(localStorage.getItem('qn-preview-class'));
+    } catch {}
+    classId = (classes.find((c) => c.id === last) || classes[0]).id;
+  }
+  await post('/api/me/student-view', { classId });
+  try {
+    localStorage.setItem('qn-preview-class', String(classId));
+  } catch {}
+  state.me = null;
+  location.hash = '#/';
+  route();
+}
+
+async function leaveStudentView() {
+  await del('/api/me/student-view');
+  state.me = null;
+  location.hash = '#/';
+  route();
+}
+
+// Hinweisleiste in der Schüleransicht: Klasse wechseln oder zurück zur Lehreransicht.
+function renderPreviewBar() {
+  document.querySelector('.preview-bar')?.remove();
+  const p = state.me?.preview;
+  if (!p) return;
+  const select = h(
+    'select',
+    { 'aria-label': 'Klasse', onchange: (e) => enterStudentView(Number(e.target.value)).catch((err) => toast(err.message, 'error')) },
+    p.classes.map((c) => h('option', { value: c.id, selected: c.id === p.classId }, c.name))
+  );
+  document.querySelector('.topbar').after(
+    h(
+      'div.preview-bar',
+      h('span', h('b', 'Schüleransicht'), ` So sieht QWERTZ Ninja für die Klasse ${p.className} aus. Deine Übungen zählen nicht in den Klassenergebnissen.`),
+      p.classes.length > 1 ? h('label.inline', 'Klasse', select) : null,
+      h('button.small.primary', { onclick: () => leaveStudentView().catch((err) => toast(err.message, 'error')) }, 'Zurück zur Lehreransicht')
+    )
+  );
+}
+
 function renderNav() {
   const nav = document.getElementById('nav');
   nav.replaceChildren();
   const name = state.me?.schoolName || state.setup?.schoolName || '';
   document.querySelector('.brand-name').textContent = !name || name.includes('QWERTZ Ninja') ? name || 'QWERTZ Ninja' : `QWERTZ Ninja · ${name}`;
+  renderPreviewBar();
   if (!state.me) return;
   const current = location.hash || '#/';
   const section = NAV[state.me.role].filter(([href]) => href !== '#/' && current.startsWith(href)).at(-1)?.[0] || (current === '#/' ? '#/' : null);
@@ -111,6 +159,9 @@ function renderNav() {
   const showMenu = !(state.me.role === 'student' && !state.me.class);
   nav.append(
     showMenu ? h('span.nav-pill', NAV[state.me.role].map(([href, label]) => h('a', { href, class: section === href ? 'active' : null }, label))) : '',
+    state.me.role === 'teacher'
+      ? h('button.small', { onclick: () => enterStudentView().catch((err) => toast(err.message, 'error')), title: 'QWERTZ Ninja so sehen, wie Schüler es sehen' }, 'Schüleransicht')
+      : '',
     h('span.nav-user', h('span.avatar', state.me.displayName.slice(0, 1)), state.me.displayName),
     h('button.link', {
       onclick: async () => {

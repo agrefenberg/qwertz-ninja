@@ -1,5 +1,5 @@
-import { append, del, errorBox, fmtDate, fmtDuration, fmtNum, fmtRate, formData, get, h, patch, post, put, toast } from '../ui.js';
-import { state } from '../app.js';
+import { append, del, errorBox, fmtDate, fmtDuration, fmtNum, fmtRate, formData, get, h, passwordInput, patch, post, put, toast } from '../ui.js';
+import { enterStudentView, state } from '../app.js';
 import { errorAnalysis, stars } from './student.js';
 import { plnSection } from './pln.js';
 import { courseMiniBar, courseSection } from './course-overview.js';
@@ -113,6 +113,7 @@ export async function classView(app, { id }) {
     h(
       'div.toolbar',
       h('label.inline', lbToggle, ' Rangliste für diese Klasse anzeigen'),
+      h('button', { onclick: () => enterStudentView(cls.id).catch((err) => toast(err.message, 'error')) }, 'Als Schüler ansehen'),
       h('a.button', { href: `/api/classes/${id}/export.csv`, download: true }, 'Ergebnisse exportieren (CSV)'),
       h(
         'button.danger',
@@ -684,9 +685,9 @@ export function accountView(app) {
       },
     },
     h('h2', 'Passwort ändern'),
-    h('label', 'Aktuelles Passwort', h('input', { name: 'current', type: 'password', required: true, autocomplete: 'current-password' })),
-    h('label', 'Neues Passwort (mindestens 10 Zeichen)', h('input', { name: 'next', type: 'password', required: true, minlength: 10, autocomplete: 'new-password' })),
-    h('label', 'Neues Passwort wiederholen', h('input', { name: 'next2', type: 'password', required: true, minlength: 10, autocomplete: 'new-password' })),
+    h('label', 'Aktuelles Passwort', passwordInput({ name: 'current', required: true, autocomplete: 'current-password' })),
+    h('label', 'Neues Passwort (mindestens 10 Zeichen)', passwordInput({ name: 'next', required: true, minlength: 10, autocomplete: 'new-password' })),
+    h('label', 'Neues Passwort wiederholen', passwordInput({ name: 'next2', required: true, minlength: 10, autocomplete: 'new-password' })),
     h('button.primary', { type: 'submit' }, 'Ändern')
   );
   append(app, h('h1', 'Konto'), h('p.muted', `Angemeldet als ${state.me.username}.`), form);
