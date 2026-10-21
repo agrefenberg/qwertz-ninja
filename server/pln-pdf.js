@@ -1,7 +1,8 @@
 // Seriendokument mit allen Abschriften eines PLN: je Schülerin oder Schüler eine eigene Seite
 // mit unverändertem Endstand, markierten Fehlern und Fehlerliste.
 import PDFDocument from 'pdfkit';
-import { PLN_TITLE, RETURN_RULES } from './pln.js';
+import { plnHeading, RETURN_RULES } from './pln.js';
+import { summary } from '../public/js/pln-rules.js';
 
 const RED = '#d92d2d';
 const RED_BG = '#ffd6d1';
@@ -24,58 +25,78 @@ const fmt = (ms, opts) => new Date(ms).toLocaleString('de-DE', { timeZone: 'Euro
 const date = (ms) => fmt(ms, { day: '2-digit', month: '2-digit', year: 'numeric' });
 const time = (ms) => fmt(ms, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-export function writePlnPdf(out, { school, className, pln, scheme, entries }) {
-  const doc = new PDFDocument({ size: 'A4', margin: MARGIN, info: { Title: `${PLN_TITLE} – ${className} – ${pln.title}`, Author: 'QWERTZ Ninja' } });
+export function writePlnPdf(out, { school, className, pln, settings, scheme, entries }) {
+  const doc = new PDFDocument({ size: 'A4', margin: MARGIN, info: { Title: `${plnHeading(settings)} – ${className} – ${pln.title}`, Author: 'QWERTZ Ninja' } });
   doc.pipe(out);
   if (!entries.length) {
-    header(doc, { school, className, pln });
+    header(doc, { school, className, pln, settings });
     doc.font('Helvetica').fontSize(11).fillColor('#000').text('Es liegen noch keine abgeschlossenen Abschriften vor.');
   }
   entries.forEach((e, n) => {
     if (n > 0) doc.addPage();
-    studentPage(doc, { school, className, pln, scheme, e });
+    studentPage(doc, { school, className, pln, settings, scheme, e });
   });
   doc.end();
 }
 
-function header(doc, { school, className, pln }) {
-  doc.font('Helvetica-Bold').fontSize(14).fillColor('#000').text(PLN_TITLE);
+function header(doc, { school, className, pln, settings }) {
+  doc.font('Helvetica-Bold').fontSize(14).fillColor('#000').text(plnHeading(settings));
   doc.font('Helvetica').fontSize(9.5).fillColor(GREY).text([school, `Klasse ${className}`, pln.title].filter(Boolean).join(' · '));
   doc.moveDown(0.6);
 }
 
-function studentPage(doc, { school, className, pln, scheme, e }) {
+function studentPage(doc, { school, className, pln, settings: st, scheme, e }) {
   const { student, attempt, ev, grade } = e;
-  header(doc, { school, className, pln });
-  const end = Math.min(attempt.submitted_at || Infinity, attempt.started_at + 10 * 60 * 1000);
+  header(doc, { school, className, pln, settings: st });
+  const end = Math.min(attempt.submitted_at || Infinity, attempt.started_at + attempt.duration_ms);
 
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#000').text(`Pseudonym: ${student.display_name}`, { continued: true });
   doc.font('Helvetica').text(`   (Benutzername ${student.username})`);
   doc.text(`Datum: ${date(attempt.started_at)}   Beginn: ${time(attempt.started_at)} Uhr   Ende: ${time(end)} Uhr`);
+  if (attempt.lrs) doc.text(`Nachteilsausgleich: ${[st.lrsTimePct ? `${st.lrsTimePct} % mehr Zeit` : '', st.mode === 'count' && st.lrsLinesPct ? `${st.lrsLinesPct} % weniger Zeilen` : ''].filter(Boolean).join(', ') || 'ja'}`);
   if (attempt.left_count) doc.fillColor(RED).text(`Prüfungsfenster während des PLN ${attempt.left_count}× verlassen.`).fillColor('#000');
   doc.moveDown(0.5);
 
   // Ergebniszeile
+  const third =
+    st.mode === 'count'
+      ? ['Fehlende Zeilen', String(ev.missingLines)]
+      : st.mode === 'percent'
+        ? ['Fehlerprozente', grade?.percent != null ? `${grade.percent.toLocaleString('de-DE', { minimumFractionDigits: 3 })} %` : '–']
+        : ['davon Returntaste', String(ev.returnErrors)];
   const y0 = doc.y;
   doc.roundedRect(MARGIN, y0, doc.page.width - 2 * MARGIN, 44, 6).fill('#f2f3f6');
   doc.fillColor('#000').font('Helvetica').fontSize(9).text('Anschläge', MARGIN + 12, y0 + 8);
   doc.text('Gewertete Fehler', MARGIN + 110, y0 + 8);
-  doc.text('davon Returntaste', MARGIN + 230, y0 + 8);
+  doc.text(third[0], MARGIN + 230, y0 + 8);
   if (grade) doc.text('Note (Vorschlag)', MARGIN + 350, y0 + 8);
   doc.font('Helvetica-Bold').fontSize(14);
-  doc.text(String(ev.gross), MARGIN + 12, y0 + 21);
+  doc.text(String(ev.strokes), MARGIN + 12, y0 + 21);
   doc.text(String(ev.errors), MARGIN + 110, y0 + 21);
-  doc.text(String(ev.returnErrors), MARGIN + 230, y0 + 21);
+  doc.text(third[1], MARGIN + 230, y0 + 21);
   if (grade) doc.text(String(grade.grade), MARGIN + 350, y0 + 21);
   doc.y = y0 + 52;
   doc.x = MARGIN;
+  const width = doc.page.width - 2 * MARGIN;
+  if (grade?.steps?.length) {
+    doc.font('Helvetica').fontSize(9).fillColor('#000').text(`Weg zur Note: ${grade.steps.join('; ')}.`, { width });
+    doc.moveDown(0.2);
+  }
   doc.font('Helvetica').fontSize(8.5).fillColor(GREY);
-  const rule = `Returntaste: ${RETURN_RULES[pln.return_rule] || ''}.`;
-  const penalty = scheme ? ` Notenschlüssel „${scheme.name}“${scheme.error_penalty ? `, ${scheme.error_penalty} Anschläge Abzug je Fehler` : ''}.` : '';
-  doc.text(`${rule}${penalty} Zwei Fehler in einem Wort zählen als ein Fehler, in der letzten Sinneinheit wird kein Fehler gewertet.`, { width: doc.page.width - 2 * MARGIN });
+  const rules = [
+    `${summary(st, scheme?.name)}${st.weight ? `, Gewichtung ${String(st.weight).replace('.', ',')}` : ''}`,
+    `Returntaste: ${RETURN_RULES[st.returnRule] || ''}`,
+    st.capitalDouble ? 'Großbuchstabe zählt 2 Anschläge' : '',
+    st.oneErrorPerWord ? 'mehrere Tippfehler in einem Wort zählen als ein Fehler' : 'jeder Tippfehler zählt einzeln',
+    st.lastWordFree ? 'in der letzten Sinneinheit wird kein Fehler gewertet' : '',
+    st.repeatFree ? 'gleich falsch geschriebene Wörter zählen nur einmal' : '',
+    st.mode === 'count' ? 'Fehler in der angefangenen oder fehlenden Zeile werden nicht gewertet' : '',
+    st.mode === 'speed' && scheme?.error_penalty ? `${scheme.error_penalty} Anschläge Abzug je Fehler` : '',
+  ].filter(Boolean);
+  doc.text(`${rules.map((r) => r[0].toUpperCase() + r.slice(1)).join('. ')}.`, { width });
   doc.moveDown(0.8);
 
-  doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text('Unveränderte Abschrift nach Ablauf der 10 Minuten');
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text('Unveränderte Abschrift nach Ablauf der Zeit');
   doc.moveDown(0.3);
   snapshot(doc, attempt.typed, ev.marks, `${student.display_name} (Fortsetzung)`);
 
@@ -177,7 +198,7 @@ function legend(doc) {
   const y = doc.y;
   const items = [
     [RED_BG, RED, 'gewerteter Fehler'],
-    [ORANGE_BG, ORANGE, 'markiert, nicht gewertet (zweiter Fehler im Wort, letzte Sinneinheit, Wiederholungsfehler)'],
+    [ORANGE_BG, ORANGE, 'markiert, nicht gewertet (z. B. zweiter Fehler im Wort, letzte Sinneinheit, Wiederholungsfehler)'],
   ];
   let yy = y;
   doc.font('Helvetica').fontSize(8);
@@ -212,7 +233,7 @@ function errorTable(doc, ev) {
   let n = 0;
   for (const e of ev.errorList) {
     n++;
-    row([n, e.expected || '–', e.typed || '(fehlt)', e.counted ? 'Fehler' : `nicht gewertet: ${e.reason}`], false, e.counted ? '#000' : ORANGE);
+    row([n, e.expected || '–', e.typed || '(fehlt)', e.counted ? (e.count > 1 ? `${e.count} Fehler` : 'Fehler') : `nicht gewertet: ${e.reason}`], false, e.counted ? '#000' : ORANGE);
   }
   if (ev.returns) {
     n++;

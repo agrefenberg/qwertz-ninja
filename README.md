@@ -7,7 +7,7 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 - **Lernende:** geführte Wiederholung der Grundstellung beim ersten Anmelden, Übungen mit Texten, Wortlisten und automatisch erzeugten Schwachstellen-Übungen, Bildschirmtastatur mit Fingerfarben, Fehlermodus wählbar (weitertippen oder korrigieren), Anschläge/min und WPM umschaltbar, Gürtel-Level, Abzeichen, Rangliste (wenn freigegeben).
 - **Kurs:** 16 aufeinander aufbauende Lektionen von der Grundreihe bis zur Abschlussprüfung. Bestanden mit höchstens 3 % Fehlern, dann wird die nächste frei; Sterne für Tempo.
 - **Persönliche Fehleranalyse:** Die App merkt sich schwache Tasten, typische Verwechslungen (z. B. „ä statt ö“) und oft verschriebene Wörter, zeigt sie unter „Fehler“ und erzeugt passende Übungen. Lehrkräfte sehen die Analyse in der Schüleransicht.
-- **Lehrkräfte:** Klassen anlegen, Schülerzugänge als Schneideliste drucken (jederzeit erneut für alle oder ausgewählte Schüler, dabei werden neue Passwörter vergeben), Übungen mit Frist und Tests mit Zeitlimit zuweisen, Notenschlüssel mit Notenvorschlag, PLN (Praktischer Leistungsnachweis, 10-Minuten-Abschrift) mit Druckvorlage und PDF aller Abschriften, eigene Texte, Ergebnisse pro Klasse, Aufgabe und Schüler, CSV-Export.
+- **Lehrkräfte:** Klassen anlegen, Schülerzugänge als Schneideliste drucken (jederzeit erneut für alle oder ausgewählte Schüler, dabei werden neue Passwörter vergeben), Übungen mit Frist und Tests mit Zeitlimit zuweisen, Notenschlüssel mit Notenvorschlag, PLN (Praktischer Leistungsnachweis, 10-Minuten-Abschrift) nach den Richtlinien mit einstellbaren Bewertungsregeln, Druckvorlage und PDF aller Abschriften, eigene Texte, Ergebnisse pro Klasse, Aufgabe und Schüler, CSV-Export.
 - **Admin:** Lehrkräfte anlegen, Passwörter zurücksetzen, Schulname, Schuljahresende, Datenschutzhinweis.
 
 ### Bewertung
@@ -19,10 +19,16 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 
 ### PLN: 10-Minuten-Abschrift
 
-- Die Lehrkraft legt in der Klasse einen PLN an: Notenschlüssel, Ausgangstext (die App ergänzt weitere Texte, bis der Text für 10 Minuten reicht), Vorlage mit Zeilen- und Anschlagsangaben oder als normaler Fließtext, Regel für die Returntaste.
+- Die Lehrkraft legt in der Klasse einen PLN an und wählt eine Vorlage nach den Richtlinien (6. Klasse 1.–4. PLN, 7. Klasse 900/1000, 8. Klasse 1100/1200, 9./10. Klasse 1200 Anschläge). Jeder Wert lässt sich danach unter „Bewertung genau einstellen“ ändern, auch nachträglich; die Notenvorschläge werden dann neu berechnet.
+- Bewertungsarten:
+  - **Fehlerprozente** (7.–9. Klasse): Fehler × 100 : Anschläge, Note 1 bis 0,100 %, Note 2 bis 0,200 % … ab 0,501 % Note 6. Geforderte Anschlagszahl; wird sie um bis zu 50/100/150/200 Anschläge unterschritten, sinkt die Note um 1/2/3/4 Stufen, darüber Note 6. Bonus: ab 400 Anschlägen über dem Soll wird 1 Fehler nicht gewertet, je weitere 200 einer mehr.
+  - **Fehlerzahl bei festen Zeilen** (6. Klasse): 10/11/12 Zeilen in 12 Minuten, 0–1 Fehler Note 1, 2–3 Note 2 … ab 10 Note 6. Jede fehlende oder angefangene Zeile eine Notenstufe schlechter (nicht bei nur einem fehlenden einsilbigen Wort), Fehler in der angefangenen oder fehlenden Zeile zählen nicht.
+  - **Notenschlüssel** nach Anschlägen pro Minute (bisheriges Verfahren, ältere PLN bleiben dabei).
+- Weitere Einstellungen: Arbeitszeit, Großbuchstabe zählt 2 Anschläge, ein Fehler je Wort, letzte Sinneinheit frei, Wiederholungsfehler, Returntaste, Zeichen je Zeile, Gewichtung, Nachteilsausgleich (25 % mehr Zeit bzw. 20 % weniger Zeilen).
+- Nachteilsausgleich (LRS/Legasthenie) kreuzt die Lehrkraft je Person vor dem Start an; dazu gibt es eine Vorlage mit größerer Schrift. „Ohne 10 F.“ setzt die Note 6, wenn das Zehn-Finger-System nicht angewendet wurde.
 - Die Druckvorlage (12 Punkt, eineinhalbfacher Zeilenabstand) enthält immer den Hinweis „Es ist ein Fließtext im Zehn-Finger-System zu schreiben“ und eine Markierung, bis wohin für die Note 1 getippt werden muss.
-- Nach der Freigabe startet jede Schülerin und jeder Schüler selbst und schreibt 10 Minuten lang, ohne den Text am Bildschirm zu sehen. Der Stand wird alle 10 Sekunden zwischengespeichert und nach 10 Minuten unverändert festgehalten.
-- Wertung: zwei Tippfehler in einem Wort zählen als ein Fehler (alle werden markiert), in der letzten Sinneinheit wird kein Fehler gewertet, Returntaste je nach Einstellung. Anschläge sind alle geschriebenen Zeichen; der Notenvorschlag nutzt den Notenschlüssel (Mindest-Anschläge pro Minute, Abzug je Fehler).
+- Nach der Freigabe startet jede Schülerin und jeder Schüler selbst und schreibt die eingestellte Zeit lang, ohne den Text am Bildschirm zu sehen. Der Stand wird alle 10 Sekunden zwischengespeichert und nach Ablauf unverändert festgehalten.
+- Wertung: zwei Tippfehler in einem Wort zählen als ein Fehler (alle werden markiert), in der letzten Sinneinheit wird kein Fehler gewertet, Returntaste je nach Einstellung. Zu jedem Notenvorschlag steht der Rechenweg in der Tabelle und im PDF.
 - Die Lehrkraft lädt alle Abschriften als ein PDF herunter: je Person eine Seite mit Pseudonym, Datum und Uhrzeit, unverändertem Text mit markierten Fehlern und Fehlerliste.
 
 ### Datenschutz

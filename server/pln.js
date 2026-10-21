@@ -4,30 +4,38 @@
 // - In der letzten Sinneinheit (dem zuletzt geschriebenen Wort) wird kein Fehler gewertet.
 // - Returntaste: entweder erster Return ein Fehler und jeder weitere ein Wiederholungsfehler (nicht
 //   gewertet), oder jeder Return ein Fehler.
-// - Korrigierte Fehler zählen nicht, gewertet wird der Endstand nach 10 Minuten.
+// - Korrigierte Fehler zählen nicht, gewertet wird der Endstand nach Ablauf der Zeit.
+// Welche Regeln gelten und wie daraus die Note wird, ist je PLN einstellbar (public/js/pln-rules.js).
 import { normalizeChar, normalizeText, suggestGrade } from '../public/js/scoring.js';
+import { FORMATS, RETURN_RULES, gradeWithSettings, linesFor, normalizeSettings, plnHeading, strokes } from '../public/js/pln-rules.js';
 
-export const PLN_TITLE = 'PLN Praktischer Leistungsnachweis 10-Minuten-Abschrift';
+export { FORMATS, RETURN_RULES, plnHeading };
+export const PLN_TITLE = plnHeading({ durationMin: 10 });
 export const PLN_DURATION_MS = 10 * 60 * 1000;
 export const PLN_GRACE_MS = 15000;
 export const PLN_MAX_CHARS = 8000;
-export const RETURN_RULES = {
-  first: 'Erster Return ein Fehler, jeder weitere ein Wiederholungsfehler',
-  each: 'Jede Nutzung der Returntaste ist ein Fehler',
-};
-export const FORMATS = {
-  lines: 'Mit Zeilen- und Anschlagsangaben',
-  plain: 'Normaler Fließtext ohne Zeilen- und Anschlagsangaben',
-};
 
-// Wie viele Anschläge in 10 Minuten fehlerfrei für die Note 1 nötig sind.
-export function note1Chars(scheme) {
+// Einstellungen eines PLN. Ältere PLN ohne Einstellungen werden wie bisher mit dem Notenschlüssel bewertet.
+export function plnSettings(p) {
+  if (p.settings) return normalizeSettings(JSON.parse(p.settings));
+  return normalizeSettings({
+    mode: 'speed',
+    durationMin: 10,
+    format: p.format,
+    returnRule: p.return_rule,
+    capitalDouble: false,
+    gradingSchemeId: p.grading_scheme_id,
+  });
+}
+
+// Wie viele Anschläge in 10 Minuten fehlerfrei für die Note 1 nötig sind (Notenschlüssel nach Anschlägen/min).
+export function note1Chars(scheme, minutes = 10) {
   const th = Array.isArray(scheme.thresholds) ? scheme.thresholds : JSON.parse(scheme.thresholds);
-  return th[0] * 10;
+  return th[0] * minutes;
 }
 
 // Vorlagetext aus dem gewählten Text und, falls nötig, weiteren Texten zusammenstellen,
-// damit niemand vor Ablauf der 10 Minuten fertig ist.
+// damit niemand vor Ablauf der Zeit fertig ist.
 export function composeText(startText, otherTexts, minChars) {
   const parts = [normalizeText(startText.content)];
   const used = [startText.title];
@@ -43,15 +51,38 @@ export function composeText(startText, otherTexts, minChars) {
   return { text: parts.join(' '), sources: used };
 }
 
-// Position (Zeichenindex) hinter dem Wort, in dem die Note-1-Grenze liegt.
-export function note1Position(text, chars) {
-  if (chars >= text.length) return text.length;
-  const space = text.indexOf(' ', Math.max(0, chars - 1));
+// Text und Note-1-Grenze (in Anschlägen) für einen neuen PLN.
+export function buildPlnText(s, startText, otherTexts, scheme) {
+  if (s.mode === 'count') {
+    const { text, sources } = composeText(startText, otherTexts, s.targetLines * (s.lineChars + 10) + 200);
+    const lines = templateLines(text, s.lineChars).slice(0, s.targetLines);
+    const cut = lines.map((l) => l.text).join(' ');
+    return { text: cut, sources, note1: strokes(cut, s.capitalDouble) };
+  }
+  const need = s.mode === 'speed' ? note1Chars(scheme, s.durationMin) : s.requiredChars;
+  const minChars = s.mode === 'speed' ? Math.ceil(need * 1.25) + 300 : need * 2 + 400;
+  const { text, sources } = composeText(startText, otherTexts, minChars);
+  return { text, sources, note1: need };
+}
+
+// Position (Zeichenindex) hinter dem Wort, in dem die Note-1-Grenze (in Anschlägen) liegt.
+export function note1Position(text, need, capitalDouble = false) {
+  let n = 0;
+  let k = 0;
+  while (k < text.length && n < need) {
+    n += capitalDouble && isUpper(text[k]) ? 2 : 1;
+    k++;
+  }
+  if (n < need || k >= text.length) return text.length;
+  const space = text.indexOf(' ', k - 1);
   return space === -1 ? text.length : space;
 }
 
+const isUpper = (c) => c !== c.toLowerCase() && c === c.toUpperCase();
+
 // Zeilen für die Druckvorlage mit Zeilen- und Anschlagsangaben.
-export function templateLines(text, width = 62) {
+// start/end sind Zeichenindizes, strokes die Anschläge bis Zeilenende.
+export function templateLines(text, width = 62, capitalDouble = false) {
   const words = text.split(' ');
   const lines = [];
   let cur = '';
@@ -63,16 +94,35 @@ export function templateLines(text, width = 62) {
   }
   if (cur) lines.push(cur);
   let total = 0;
+  let sum = 0;
   return lines.map((line, i) => {
     const start = total;
-    total += line.length + (i < lines.length - 1 ? 1 : 0); // Leerzeichen am Zeilenende zählt mit
-    return { no: i + 1, text: line, start, end: total };
+    const add = i < lines.length - 1 ? 1 : 0; // Leerzeichen am Zeilenende zählt mit
+    total += line.length + add;
+    sum += strokes(line, capitalDouble) + add;
+    return { no: i + 1, text: line, start, end: total, strokes: sum };
   });
+}
+
+// Wertungsregeln für evaluatePln aus den PLN-Einstellungen.
+export function evalRules(s, text, lrs = false) {
+  return {
+    returnRule: s.returnRule,
+    oneErrorPerWord: s.oneErrorPerWord,
+    lastWordFree: s.lastWordFree,
+    repeatFree: s.repeatFree,
+    capitalDouble: s.capitalDouble,
+    monosyllableExempt: s.monosyllableExempt,
+    lines: s.mode === 'count' ? { list: templateLines(text, s.lineChars), target: linesFor(s, lrs) } : null,
+  };
 }
 
 // ---------- Auswertung ----------
 
-export function evaluatePln(source, raw, returnRule = 'first') {
+// rules: Wertungsregeln (siehe public/js/pln-rules.js). Nur eine Zeichenkette = Regel für die Returntaste.
+export function evaluatePln(source, raw, rules = {}) {
+  if (typeof rules === 'string') rules = { returnRule: rules };
+  rules = { returnRule: 'first', oneErrorPerWord: true, lastWordFree: true, repeatFree: false, capitalDouble: false, lines: null, monosyllableExempt: true, ...rules };
   const t = Array.from(normalizeText(source));
   const rawChars = Array.from(String(raw ?? '').replace(/\r\n?/g, '\n')).slice(0, PLN_MAX_CHARS);
 
@@ -102,11 +152,13 @@ export function evaluatePln(source, raw, returnRule = 'first') {
   // Wortnummer je Zeichen der Vorlage; ein Leerzeichen gehört zum Wort davor.
   const wIdx = new Int32Array(t.length + 1);
   const words = [];
+  const wordStart = [];
   let w = -1;
   for (let j = 0; j < t.length; j++) {
     if (t[j] !== ' ' && (j === 0 || t[j - 1] === ' ')) {
       w++;
       words.push('');
+      wordStart.push(j);
     }
     wIdx[j] = Math.max(w, 0);
     if (t[j] !== ' ' && w >= 0) words[w] += t[j];
@@ -145,30 +197,65 @@ export function evaluatePln(source, raw, returnRule = 'first') {
     }
   }
 
-  const counted = new Set();
-  const marks = []; // { at: Index im Rohtext, kind: 'wrong'|'missing'|'return', counted, missing? }
-  const slots = new Map();
+  // Wie weit die Vorlage abgeschrieben wurde (Zeichenindex hinter dem letzten erreichten Zeichen).
+  let reached = 0;
+  for (const op of ops) if (op.type !== 'ins') reached = Math.max(reached, op.j + 1);
+
+  // Feste Zeilen (6. Klasse): Fehler in der angefangenen oder fehlenden Zeile werden nicht gewertet,
+  // jede fehlende Zeile kostet eine Notenstufe.
+  let cutoff = Infinity;
+  let missingLines = 0;
+  let missingExempt = false;
+  if (rules.lines) {
+    const { list, target } = rules.lines;
+    let completed = 0;
+    while (completed < Math.min(target, list.length) && list[completed].start + list[completed].text.length <= reached) completed++;
+    missingLines = target - completed;
+    if (list[completed]) cutoff = list[completed].start;
+    if (missingLines === 1 && rules.monosyllableExempt && completed < list.length) {
+      const rest = t.slice(reached, list[completed].start + list[completed].text.length).join('').trim();
+      if (rest && !rest.includes(' ') && syllables(rest) <= 1) {
+        missingLines = 0;
+        missingExempt = true;
+      }
+    }
+  }
+
+  const typedBySlot = new Map();
+  for (const op of ops) if (op.type !== 'del') typedBySlot.set(op.slot, (typedBySlot.get(op.slot) || '') + y[op.i]);
+  const slotOps = new Map();
   for (const op of ops) {
     if (op.type === 'match') continue;
-    let isCounted = false;
+    if (!slotOps.has(op.slot)) slotOps.set(op.slot, []);
+    slotOps.get(op.slot).push(op);
+  }
+  const seen = new Set();
+  const slots = new Map();
+  let wordErrors = 0;
+  for (const slot of [...slotOps.keys()].sort((a, b) => a - b)) {
+    const key = `${words[slot] ?? ''}|${(typedBySlot.get(slot) || '').trim()}`;
     let reason = '';
-    if (op.slot === lastSlot) reason = 'letzte Sinneinheit';
-    else if (counted.has(op.slot)) reason = 'weiterer Fehler im selben Wort';
-    else {
-      isCounted = true;
-      counted.add(op.slot);
-    }
-    const s = slots.get(op.slot) || { slot: op.slot, counted: false, reason: '' };
-    if (isCounted) s.counted = true;
-    else if (!s.counted && !s.reason) s.reason = reason;
-    slots.set(op.slot, s);
+    if (slot === lastSlot && rules.lastWordFree) reason = 'letzte Sinneinheit';
+    else if ((wordStart[slot] ?? Infinity) >= cutoff) reason = 'angefangene oder fehlende Zeile';
+    else if (rules.repeatFree && seen.has(key)) reason = 'Wiederholungsfehler';
+    seen.add(key);
+    const counted = !reason;
+    const n = counted ? (rules.oneErrorPerWord ? 1 : slotOps.get(slot).length) : 0;
+    wordErrors += n;
+    slots.set(slot, { slot, counted, reason, n });
+    slotOps.get(slot).forEach((op, k) => (op.counted = counted && (k === 0 || !rules.oneErrorPerWord)));
+  }
+
+  const marks = []; // { at: Index im Rohtext, kind: 'wrong'|'missing'|'return', counted, missing? }
+  for (const op of ops) {
+    if (op.type === 'match') continue;
     if (op.type === 'del') {
       // Fehlende Zeichen vor dem nächsten geschriebenen Zeichen markieren.
       const nextRaw = nextRawIndex(op.i, yRaw, rawChars.length);
-      marks.push({ at: nextRaw, kind: 'missing', counted: isCounted, missing: t[op.j] });
+      marks.push({ at: nextRaw, kind: 'missing', counted: op.counted, missing: t[op.j] });
     } else {
       const at = yRaw[op.i];
-      marks.push({ at: at === -1 ? nearestReturn(op.i, yRaw, returnsAt) : at, kind: 'wrong', counted: isCounted });
+      marks.push({ at: at === -1 ? nearestReturn(op.i, yRaw, returnsAt) : at, kind: 'wrong', counted: op.counted });
     }
   }
   // Fehlende Zeichen hintereinander zu einer Markierung zusammenfassen.
@@ -183,42 +270,48 @@ export function evaluatePln(source, raw, returnRule = 'first') {
 
   let returnErrors = 0;
   returnsAt.forEach((at, n) => {
-    const isCounted = returnRule === 'each' || n === 0;
+    const isCounted = rules.returnRule === 'each' || n === 0;
     if (isCounted) returnErrors++;
     merged.push({ at, kind: 'return', counted: isCounted, reason: isCounted ? '' : 'Wiederholungsfehler' });
   });
 
   // Fehlerliste je Wort: Vorlage und Geschriebenes.
-  const typedBySlot = new Map();
-  for (const op of ops) {
-    if (op.type === 'del' || !slots.has(op.slot)) continue;
-    typedBySlot.set(op.slot, (typedBySlot.get(op.slot) || '') + y[op.i]);
-  }
-  const errorList = [...slots.values()]
-    .sort((a, b) => a.slot - b.slot)
-    .map((s) => ({
-      expected: words[s.slot] ?? '',
-      typed: (typedBySlot.get(s.slot) || '').trim(),
-      counted: s.counted,
-      reason: s.counted ? '' : s.reason,
-    }));
+  const errorList = [...slots.values()].map((s) => ({
+    expected: words[s.slot] ?? '',
+    typed: (typedBySlot.get(s.slot) || '').trim(),
+    counted: s.counted,
+    count: s.n,
+    reason: s.reason,
+  }));
 
-  const wordErrors = counted.size;
   return {
     gross: y.length,
+    strokes: strokes(y.join(''), rules.capitalDouble),
     wordErrors,
     returnErrors,
     returns: returnsAt.length,
     errors: wordErrors + returnErrors,
+    reached,
+    missingLines,
+    missingExempt,
     marks: merged.sort((a, b) => a.at - b.at || (a.kind === 'missing' ? -1 : 1)),
     errorList,
     typedWords: words.length ? Math.min(words.length, lastSlot + 1) : 0,
   };
 }
 
-export function gradePln(scheme, ev) {
+// Silben grob über Vokalgruppen zählen (für die Ausnahme „einsilbiges Wort“).
+export function syllables(word) {
+  return (word.toLowerCase().match(/[aeiouyäöü]+/g) || []).length;
+}
+
+// Notenvorschlag. scheme nur für die Bewertungsart „Notenschlüssel“.
+export function gradePln(s, ev, { scheme = null, lrs = false, noTouch = false, durationMs = PLN_DURATION_MS } = {}) {
+  if (s.mode !== 'speed') return gradeWithSettings(s, ev, { lrs, noTouch });
+  if (noTouch) return { grade: 6, steps: ['Zehn-Finger-System nicht angewendet: Note 6'] };
   if (!scheme) return null;
-  return suggestGrade(scheme, { correct: ev.gross, errors: ev.errors, durationMs: PLN_DURATION_MS });
+  const g = suggestGrade(scheme, { correct: ev.strokes, errors: ev.errors, durationMs });
+  return { ...g, steps: [`${g.netApm} Anschläge pro Minute nach Notenschlüssel „${scheme.name}“: Note ${g.grade}`] };
 }
 
 function nextRawIndex(i, yRaw, rawLen) {
