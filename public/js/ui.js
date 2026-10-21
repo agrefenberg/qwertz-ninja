@@ -60,6 +60,11 @@ export function fmtNum(n, digits = 0) {
   return Number(n).toLocaleString('de-DE', { maximumFractionDigits: digits, minimumFractionDigits: digits });
 }
 
+// Prozentwerte ohne überflüssige Nachkommastelle: 3 %, 2,5 %.
+export function fmtRate(n) {
+  return Number(n).toLocaleString('de-DE', { maximumFractionDigits: 1 });
+}
+
 export function fmtDuration(ms) {
   const s = Math.round(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min`;

@@ -885,6 +885,173 @@ kbd {
   margin-left: auto;
 }
 
+/* ---------- Kursfortschritt für Lehrkräfte ---------- */
+
+.cc {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 0;
+  padding: 0;
+  vertical-align: middle;
+  background: #e4e6ec;
+  font-size: 0.65rem;
+  font-weight: 800;
+  line-height: 22px;
+  text-align: center;
+  color: var(--ink);
+}
+.cc-passed { background: #c9f5cf; }
+.cc-passed[data-stars='2'] { background: #8ff09c; }
+.cc-passed[data-stars='3'] { background: #3fc65a; }
+.cc-open { background: var(--yellow); box-shadow: inset 0 0 0 1.5px #d9c62a; }
+.cc-teacher { background: var(--purple); }
+.cc-locked { background: #e4e6ec var(--hatch); }
+button.cc { cursor: pointer; transition: none; }
+button.cc-locked:hover { background: #d4d7df var(--hatch); }
+button.cc-teacher:hover { background: #a57ef5; }
+button.cc:hover,
+button.cc:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+button.cc-locked:hover::after { content: '+'; font-size: 0.9rem; }
+.cc-stars { opacity: 0.55; }
+
+.course-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+.course-mini-cells {
+  display: inline-flex;
+  gap: 2px;
+}
+.course-mini .cc {
+  width: 7px;
+  height: 16px;
+  border-radius: 2px;
+}
+.course-mini-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.course-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.course-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.course-legend .cc {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.course-chart {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: clamp(2px, 1vw, 6px);
+  align-items: end;
+  margin: 0.5rem 0 1.25rem;
+}
+.course-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.course-col-track {
+  position: relative;
+  width: 100%;
+  max-width: 34px;
+  height: 120px;
+  background: var(--soft);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.course-col-passed,
+.course-col-open {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+.course-col-passed { background: #3fc65a; }
+.course-col-open { background: var(--yellow); }
+.course-col-num,
+.course-col-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-height: 1em;
+}
+.course-col-label { color: var(--muted); }
+
+.course-matrix {
+  border-collapse: separate;
+  border-spacing: 3px;
+}
+.course-matrix th {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 700;
+  text-align: center;
+}
+.course-matrix td {
+  padding: 0;
+}
+.course-matrix .name {
+  text-align: left;
+  padding-right: 0.75rem;
+  white-space: nowrap;
+}
+.course-matrix .num {
+  padding-left: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.course-tools select {
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+}
+.course-rate label.inline {
+  flex-wrap: wrap;
+}
+.course-rate input[type='number'] {
+  width: 5.5rem;
+  flex: none;
+}
+
+.lessons-compact li,
+.lessons-compact li.open {
+  padding: 0.6rem 1rem;
+}
+.lessons li.teacher {
+  background: var(--purple);
+}
+.lesson-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.progress.progress-light {
+  background: var(--soft);
+}
+
 /* ---------- Gürtel und Abzeichen ---------- */
 
 .belt-card {
