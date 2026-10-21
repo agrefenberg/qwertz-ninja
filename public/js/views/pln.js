@@ -1,9 +1,9 @@
 // PLN: Praktischer Leistungsnachweis, 10-Minuten-Abschrift von einer Papiervorlage.
 import { append, del, errorBox, fmtDate, fmtNum, get, h, patch, post, put, toast } from '../ui.js';
 import { state } from '../app.js';
-import { DEFAULTS, FORMATS, MODES, PRESETS, linesFor, normalizeSettings, plnHeading, presetSettings, strokes, summary } from '../pln-rules.js';
+import { DEFAULTS, MODES, PRESETS, linesFor, normalizeSettings, plnHeading, presetSettings, strokes, summary } from '../pln-rules.js';
 
-const FORMAT_LABEL = { ...FORMATS, plain: 'Normaler Fließtext (ab dem letzten PLN der 7. Jahrgangsstufe)' };
+const FORMAT_LABEL = { lines: 'Mit Zeilenangaben', plain: 'Normaler Fließtext' };
 const RETURN_LABEL = {
   first: 'Erster Return ein Fehler, weitere als Wiederholungsfehler',
   each: 'Jeder Return ein Fehler',
@@ -13,6 +13,7 @@ const NOTES = ['Note 1', 'Note 2', 'Note 3', 'Note 4', 'Note 5'];
 
 const time = (ms) => new Date(ms).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 const dec = (n) => String(n).replace('.', ',');
+const statusTag = (status) => h(`span.tag.pln-status.pln-status-${status}`, STATUS_LABEL[status]);
 
 function confirmDo(msg, fn) {
   return async () => {
@@ -25,41 +26,66 @@ function confirmDo(msg, fn) {
   };
 }
 
+// Die wichtigsten Regeln in einer Zeile, damit man die Einstellungen nicht aufklappen muss.
+function rulesLine(s, schemeName = '') {
+  const parts = [summary(s, schemeName)];
+  if (s.mode === 'percent') {
+    parts.push(`Note 1 bis ${dec(s.percentBands[0])} %`);
+    if (s.bonus) parts.push(`Bonus ab +${s.bonusStart}`);
+  }
+  if (s.mode === 'count') {
+    parts.push(`Note 1 bis ${s.countBands[0]} ${s.countBands[0] === 1 ? 'Fehler' : 'Fehler'}`);
+    if (s.missingLinePenalty) parts.push(`je fehlende Zeile −${s.missingLinePenalty} ${s.missingLinePenalty === 1 ? 'Stufe' : 'Stufen'}`);
+  }
+  if (s.capitalDouble) parts.push('Großbuchstabe = 2 Anschläge');
+  parts.push(s.returnRule === 'each' ? 'jeder Return ein Fehler' : 'erster Return ein Fehler');
+  const nta = [s.lrsTimePct ? `+${s.lrsTimePct} % Zeit` : '', s.mode === 'count' && s.lrsLinesPct ? `−${s.lrsLinesPct} % Zeilen` : ''].filter(Boolean).join(', ');
+  if (nta) parts.push(`Nachteilsausgleich ${nta}`);
+  return parts.join(' · ');
+}
+
 // ---------- Lehrkraft: Einstellungen eines PLN ----------
 
-// Formularfelder für alle Bewertungsregeln. Vorlagen nach den Richtlinien füllen die Felder,
-// danach lässt sich jeder Wert einzeln anpassen.
-function settingsFields(initial, schemes, { locked = false } = {}) {
-  const box = h('div.pln-settings');
+// Vorlage nach den Richtlinien als Auswahl, darunter eine Zeile mit den wichtigsten Regeln und
+// aufklappbar alle Werte. Die Vorlage füllt die Felder, danach lässt sich jeder Wert einzeln anpassen.
+function settingsFields(initial, schemes, { locked = false, open = false } = {}) {
   const field = (name, label, value, attrs = {}) => h('label', label, h('input', { name, value: dec(value), inputmode: 'decimal', ...attrs }));
   const check = (name, label, value) => h('label.inline.pln-check', h('input', { type: 'checkbox', name, checked: value }), label);
-  const row = (prefix, values) => h('div.grid5', values.map((v, i) => field(`${prefix}${i}`, NOTES[i], v, { required: true })));
-  const steps = (values) => h('div.grid5', values.map((v, i) => field(`shortfallSteps${i}`, `${i + 1} ${i ? 'Stufen' : 'Stufe'} bis`, v, { required: true })));
+  const row = (prefix, values, labels) => h('div.grid5', values.map((v, i) => field(`${prefix}${i}`, labels[i], v, { required: true })));
 
   let current;
+  const preset = h(
+    'select',
+    { name: 'preset', onchange: (e) => e.target.value && render({ ...presetSettings(e.target.value), preset: e.target.value, gradingSchemeId: current.gradingSchemeId }) },
+    h('option', { value: '' }, 'Eigene Einstellungen'),
+    PRESETS.map((p) => h('option', { value: p.id }, p.label))
+  );
+  const line = h('p.pln-rules-line');
+  const body = h('div.pln-settings');
+  const details = h('details.pln-more', { open }, h('summary', 'Alle Werte anpassen'), body);
+
   const render = (s) => {
     current = s;
+    preset.value = s.preset || '';
     const groups = {
       percent: h(
         'fieldset.pln-group',
         h('legend', 'Fehlerprozente (Fehler × 100 : Anschläge)'),
-        field('requiredChars', 'Geforderte Anschlagszahl (Soll, für die Note 1 nötig)', s.requiredChars, { required: true }),
-        h('p.muted.small', 'Höchste Fehlerprozente je Note, darüber Note 6:'),
-        row('percentBands', s.percentBands),
-        h('p.muted.small', 'Soll unterschritten: bis zu so vielen Anschlägen zu wenig wird die Note um 1, 2, 3, 4 Stufen herabgesetzt, darüber Note 6.'),
-        steps(s.shortfallSteps),
-        check('bonus', 'Bonus: Fehler werden nicht gewertet, wenn das Soll deutlich überschritten wird', s.bonus),
-        h('div.grid2', field('bonusStart', 'Ab so vielen Anschlägen über dem Soll: 1 Fehler frei', s.bonusStart), field('bonusStep', 'Je weitere so viele Anschläge: 1 Fehler mehr frei', s.bonusStep))
+        h('div.grid3', field('requiredChars', 'Geforderte Anschläge (Soll)', s.requiredChars, { required: true }), field('bonusStart', 'Bonus: 1 Fehler frei ab + Anschlägen', s.bonusStart), field('bonusStep', 'je weitere + Anschläge 1 Fehler mehr', s.bonusStep)),
+        check('bonus', 'Bonus bei deutlich mehr Anschlägen als gefordert', s.bonus),
+        h('p.pln-hint', 'Höchste Fehlerprozente je Note, darüber Note 6'),
+        row('percentBands', s.percentBands, NOTES),
+        h('p.pln-hint', 'Soll unterschritten um höchstens … Anschläge: Note 1–4 Stufen schlechter, darüber Note 6'),
+        row('shortfallSteps', s.shortfallSteps, ['−1 Stufe', '−2 Stufen', '−3 Stufen', '−4 Stufen'])
       ),
       count: h(
         'fieldset.pln-group',
-        h('legend', 'Fehlerzahl beim Abschreiben fester Zeilen'),
-        h('div.grid2', field('targetLines', 'Zeilen zum Abschreiben', s.targetLines, { required: true, disabled: locked }), field('missingLinePenalty', 'Notenstufen je fehlender Zeile', s.missingLinePenalty)),
-        h('p.muted.small', 'Höchste Fehlerzahl je Note, darüber Note 6:'),
-        row('countBands', s.countBands),
-        check('monosyllableExempt', 'Fehlt nur ein einsilbiges Wort, wird die Note nicht herabgesetzt', s.monosyllableExempt),
-        field('lrsLinesPct', 'Nachteilsausgleich: so viel Prozent weniger Zeilen', s.lrsLinesPct),
-        h('p.muted.small', 'Fehler in der angefangenen oder fehlenden Zeile werden nicht gewertet.')
+        h('legend', 'Fehlerzahl bei festen Zeilen'),
+        h('div.grid3', field('targetLines', 'Zeilen zum Abschreiben', s.targetLines, { required: true, disabled: locked }), field('missingLinePenalty', 'Stufen je fehlender Zeile', s.missingLinePenalty), field('lrsLinesPct', 'Nachteilsausgleich: % weniger Zeilen', s.lrsLinesPct)),
+        h('p.pln-hint', 'Höchste Fehlerzahl je Note, darüber Note 6'),
+        row('countBands', s.countBands, NOTES),
+        check('monosyllableExempt', 'Fehlt nur ein einsilbiges Wort, keine Abstufung', s.monosyllableExempt),
+        h('p.pln-hint', 'Fehler in der angefangenen oder fehlenden Zeile werden nicht gewertet.')
       ),
       speed: h(
         'fieldset.pln-group',
@@ -69,48 +95,38 @@ function settingsFields(initial, schemes, { locked = false } = {}) {
           : h('p.muted.small', 'Bitte zuerst unter „Notenschlüssel“ einen anlegen.')
       ),
     };
-    box.replaceChildren(
+    body.replaceChildren(
       h(
-        'label',
-        'Vorlage nach den Richtlinien',
-        h(
-          'select',
-          {
-            name: 'preset',
-            onchange: (e) => e.target.value && render({ ...presetSettings(e.target.value), preset: e.target.value, gradingSchemeId: current.gradingSchemeId }),
-          },
-          h('option', { value: '' }, 'Eigene Einstellungen'),
-          PRESETS.map((p) => h('option', { value: p.id, selected: p.id === s.preset }, p.label))
-        )
+        'div.grid4',
+        h('label.span2', 'Bewertungsart', h('select', { name: 'mode', disabled: locked, onchange: (e) => render(normalizeSettings({ ...read(), mode: e.target.value, preset: undefined })) }, Object.entries(MODES).map(([v, l]) => h('option', { value: v, selected: v === s.mode }, l)))),
+        field('durationMin', 'Arbeitszeit (Min.)', s.durationMin, { required: true }),
+        field('weight', 'Gewichtung', s.weight)
       ),
       h(
-        'div.grid2',
-        h('label', 'Bewertungsart', h('select', { name: 'mode', disabled: locked, onchange: (e) => render(normalizeSettings({ ...read(), mode: e.target.value, preset: undefined })) }, Object.entries(MODES).map(([v, l]) => h('option', { value: v, selected: v === s.mode }, l)))),
-        h('div.grid2', field('durationMin', 'Arbeitszeit (Minuten)', s.durationMin, { required: true }), field('weight', 'Gewichtung', s.weight))
-      ),
-      h(
-        'div.grid2',
+        'div.grid4',
         s.mode === 'count'
-          ? h('label', 'Vorlage', h('select', { disabled: true }, h('option', FORMATS.lines)))
+          ? h('label', 'Vorlage', h('select', { disabled: true }, h('option', FORMAT_LABEL.lines)))
           : h('label', 'Vorlage', h('select', { name: 'format' }, Object.entries(FORMAT_LABEL).map(([v, l]) => h('option', { value: v, selected: v === s.format }, l)))),
-        h('label', 'Returntaste', h('select', { name: 'returnRule' }, Object.entries(RETURN_LABEL).map(([v, l]) => h('option', { value: v, selected: v === s.returnRule }, l))))
+        h('label', 'Returntaste', h('select', { name: 'returnRule' }, Object.entries(RETURN_LABEL).map(([v, l]) => h('option', { value: v, selected: v === s.returnRule }, l)))),
+        field('lineChars', 'Zeichen je Zeile', s.lineChars, { disabled: locked }),
+        field('lrsTimePct', 'Nachteilsausgleich: % mehr Zeit', s.lrsTimePct)
       ),
-      h('div.grid2', field('lineChars', 'Zeichen je Zeile auf der Vorlage', s.lineChars, { disabled: locked }), field('lrsTimePct', 'Nachteilsausgleich: so viel Prozent mehr Zeit', s.lrsTimePct)),
       h(
         'div.pln-checks',
         check('capitalDouble', 'Großbuchstabe zählt 2 Anschläge', s.capitalDouble),
-        check('oneErrorPerWord', 'Mehrere Tippfehler in einem Wort zählen als ein Fehler (alle werden markiert)', s.oneErrorPerWord),
-        check('lastWordFree', 'In der letzten Sinneinheit (letztes Wort) wird kein Fehler gewertet', s.lastWordFree),
-        check('repeatFree', 'Wiederholungsfehler: dasselbe Wort gleich falsch geschrieben zählt nur einmal', s.repeatFree)
+        check('oneErrorPerWord', 'Mehrere Tippfehler in einem Wort = ein Fehler', s.oneErrorPerWord),
+        check('lastWordFree', 'Letzte Sinneinheit ohne Wertung', s.lastWordFree),
+        check('repeatFree', 'Wiederholungsfehler nur einmal werten', s.repeatFree)
       ),
       groups[s.mode]
     );
+    update();
   };
 
   // Formularwerte als Einstellungen lesen.
   const read = () => {
-    const out = { ...current };
-    for (const el of box.querySelectorAll('input[name], select[name]')) {
+    const out = { ...current, preset: preset.value };
+    for (const el of body.querySelectorAll('input[name], select[name]')) {
       if (el.disabled) continue;
       out[el.name] = el.type === 'checkbox' ? el.checked : el.value;
     }
@@ -124,8 +140,18 @@ function settingsFields(initial, schemes, { locked = false } = {}) {
     delete out.textId;
     return out;
   };
+  const update = () => {
+    const s = normalizeSettings(read());
+    const scheme = schemes.find((x) => x.id === Number(s.gradingSchemeId));
+    line.textContent = rulesLine(s, scheme?.name);
+  };
+  // Eigene Änderung: Auswahl der Vorlage zurücksetzen, Zusammenfassung neu schreiben.
+  body.addEventListener('input', (e) => {
+    if (e.target.name !== 'mode') preset.value = '';
+    update();
+  });
   render({ ...DEFAULTS, ...initial });
-  return { el: box, read };
+  return { preset, line, details, read };
 }
 
 // ---------- Lehrkraft: Abschnitt in der Klassenansicht ----------
@@ -137,17 +163,18 @@ export function plnSection(classId, texts, schemes) {
     list.replaceChildren(
       plns.length
         ? h(
-            'ul.list',
+            'ul.list.pln-list',
             plns.map((p) =>
               h(
                 'li',
-                h('span.tag.tag-pln', 'PLN'),
                 h('a', { href: `#/pln/${p.id}` }, p.title),
-                h('span.muted.small', ` · ${STATUS_LABEL[p.status]} · ${p.started} begonnen · ${summary(p.settings, p.scheme_name)}`)
+                statusTag(p.status),
+                h('span.muted.small', `${summary(p.settings, p.scheme_name)} · ${p.started} begonnen`),
+                h('a.button.small', { href: `#/pln/${p.id}` }, 'Öffnen')
               )
             )
           )
-        : h('p.muted', 'Noch kein PLN angelegt.')
+        : h('p.muted.small', 'Noch kein PLN angelegt.')
     );
   };
   load();
@@ -155,8 +182,9 @@ export function plnSection(classId, texts, schemes) {
   const longFirst = [...texts].sort((a, b) => b.length - a.length);
   const settings = settingsFields({ ...presetSettings('7-1'), preset: '7-1', gradingSchemeId: schemes[0]?.id ?? null }, schemes);
   const form = h(
-    'form',
+    'form.pln-new',
     {
+      hidden: true,
       onsubmit: async (e) => {
         e.preventDefault();
         const showError = errorBox(form);
@@ -171,24 +199,30 @@ export function plnSection(classId, texts, schemes) {
         }
       },
     },
-    h('h3', 'Neuen PLN anlegen'),
     h(
-      'div.grid2',
+      'div.grid3',
       h('label', 'Titel', h('input', { name: 'title', required: true, maxlength: 120, placeholder: 'z. B. 2. Tipp-PLN' })),
-      h(
-        'label',
-        'Text',
-        h('select', { name: 'textId', required: true }, longFirst.map((t) => h('option', { value: t.id }, `${t.title}${t.own ? ' (eigener Text)' : ''} · ${t.length} Zeichen`)))
-      )
+      h('label', 'Vorlage nach den Richtlinien', settings.preset),
+      h('label', 'Text', h('select', { name: 'textId', required: true }, longFirst.map((t) => h('option', { value: t.id }, `${t.title}${t.own ? ' (eigener Text)' : ''} · ${t.length} Zeichen`))))
     ),
-    h('p.muted.small', 'Ist der Text kürzer als nötig, hängt die App weitere Texte an, damit niemand vor Ablauf der Zeit fertig ist. Alle Werte lassen sich später noch ändern.'),
-    settings.el,
-    h('button.primary', { type: 'submit' }, 'PLN anlegen')
+    settings.line,
+    settings.details,
+    h(
+      'div.toolbar',
+      h('button.primary', { type: 'submit' }, 'PLN anlegen'),
+      h('button', { type: 'button', onclick: () => toggle(false) }, 'Abbrechen'),
+      h('span.muted.small', 'Reicht der Text nicht für die ganze Zeit, hängt die App weitere Texte an.')
+    )
   );
+  const openBtn = h('button.small', { type: 'button', onclick: () => toggle(true) }, '+ Neuer PLN');
+  const toggle = (show) => {
+    form.hidden = !show;
+    openBtn.hidden = show;
+    if (show) form.elements.title.focus();
+  };
   return h(
     'section.card',
-    h('h2', 'PLN Praktischer Leistungsnachweis'),
-    h('p.muted.small', 'Abschrift von einer ausgedruckten Vorlage. Nach Ablauf der Zeit wird der Stand unverändert gespeichert. Bewertet wird nach den Richtlinien, jeder Wert ist einstellbar.'),
+    h('div.pln-section-head', h('h2', 'PLN Praktischer Leistungsnachweis'), openBtn),
     list,
     form
   );
@@ -213,12 +247,6 @@ export async function plnView(app, { id }) {
   const done = rows.filter((r) => r.state === 'done').length;
   const anyStarted = rows.some((r) => r.state !== 'none');
 
-  const statusButtons = {
-    draft: [h('button.primary', { onclick: setStatus('open') }, 'Für Schüler freigeben')],
-    open: [h('button.primary', { onclick: confirmDo('PLN beenden? Danach kann niemand mehr beginnen. Laufende Abschriften enden regulär nach Ablauf der Zeit.', setStatus('closed')) }, 'PLN beenden')],
-    closed: [h('button', { onclick: setStatus('open') }, 'Wieder freigeben')],
-  }[pln.status];
-
   const setFlag = (r, key) => async (e) => {
     try {
       await put(`/api/plns/${id}/students/${r.user_id}`, { [key]: e.target.checked });
@@ -229,10 +257,12 @@ export async function plnView(app, { id }) {
     }
   };
 
-  const settings = settingsFields(s, schemes, { locked: anyStarted });
+  // Einstellungen: aufklappbar unter dem Kopf, Regeln stehen als eine Zeile darüber.
+  const settings = settingsFields(s, schemes, { locked: anyStarted, open: true });
   const settingsForm = h(
-    'form',
+    'form.pln-edit',
     {
+      hidden: true,
       onsubmit: async (e) => {
         e.preventDefault();
         const showError = errorBox(settingsForm);
@@ -245,62 +275,65 @@ export async function plnView(app, { id }) {
         }
       },
     },
-    anyStarted ? h('p.muted.small', 'Es hat schon jemand begonnen: Bewertungsart, Text und Zeilen bleiben fest. Alle Bewertungsregeln lassen sich weiter ändern, die Notenvorschläge werden dann neu berechnet.') : null,
-    settings.el,
-    h('button.primary', { type: 'submit' }, 'Einstellungen speichern')
+    h('label', 'Vorlage nach den Richtlinien', settings.preset),
+    anyStarted ? h('p.pln-hint', 'Es hat schon jemand begonnen: Bewertungsart, Text und Zeilen bleiben fest. Die übrigen Regeln lassen sich ändern, die Notenvorschläge werden neu berechnet.') : null,
+    settings.details,
+    h('div.toolbar', h('button.primary', { type: 'submit' }, 'Speichern'), h('button', { type: 'button', onclick: () => (settingsForm.hidden = true) }, 'Abbrechen'))
   );
+
+  // Ablauf als drei Schritte nebeneinander.
+  const releaseStep = {
+    draft: h('button.primary', { onclick: setStatus('open') }, 'Freigeben'),
+    open: h('button.primary', { onclick: confirmDo('PLN beenden? Danach kann niemand mehr beginnen. Laufende Abschriften enden regulär nach Ablauf der Zeit.', setStatus('closed')) }, 'Beenden'),
+    closed: h('button', { onclick: setStatus('open') }, 'Wieder freigeben'),
+  }[pln.status];
+  const step = (n, title, text, ...actions) => h('div.pln-step', h('span.pln-step-no', n), h('div', h('strong', title), h('p', text), h('div.pln-step-actions', actions)));
 
   const third = s.mode === 'count' ? 'Fehlende Zeilen' : s.mode === 'percent' ? 'Fehler %' : null;
   const ntaInfo = [s.lrsTimePct ? `${s.lrsTimePct} % mehr Zeit` : '', s.mode === 'count' && s.lrsLinesPct ? `${linesFor(s, true)} statt ${s.targetLines} Zeilen` : ''].filter(Boolean).join(', ');
+  const thirdCell = (r) => (r.grade == null ? '–' : s.mode === 'count' ? r.missingLines : r.grade.percent != null ? `${r.grade.percent.toLocaleString('de-DE', { minimumFractionDigits: 3 })} %` : '–');
+  const stateCell = (r) =>
+    r.state === 'none'
+      ? h('span.muted', 'nicht begonnen')
+      : r.state === 'running'
+        ? h('span.tag', `schreibt bis ${time(r.end_at)}`)
+        : h('span', 'abgegeben', h('span.muted.small', ` ${time(r.started_at)}`));
 
   append(
     app,
-    h('p', h('a', { href: `#/klasse/${pln.class_id}` }, `← Klasse ${pln.className}`)),
-    h('p.pln-kicker', pln.heading),
-    h('h1', pln.title),
+    h('p.pln-back', h('a', { href: `#/klasse/${pln.class_id}` }, `← Klasse ${pln.className}`), h('span.muted.small', ` · ${pln.heading}`)),
+    h('div.pln-title', h('h1', pln.title), statusTag(pln.status)),
     h(
-      'div.chips',
-      h('span.chip', h('b', STATUS_LABEL[pln.status])),
-      h('span.chip', summary(s, pln.scheme?.name)),
-      s.mode !== 'count' ? h('span.chip', FORMAT_LABEL[s.format]) : null,
-      h('span.chip', `Returntaste: ${RETURN_LABEL[s.returnRule]}`),
-      h('span.chip', `Note 1 ab ${fmtNum(pln.note1_chars)} Anschlägen`),
-      s.weight ? h('span.chip', `Gewichtung ${dec(s.weight)}`) : null
+      'p.pln-rules-line',
+      rulesLine(s, pln.scheme?.name),
+      ' ',
+      h('button.link.small', { onclick: () => { settingsForm.hidden = !settingsForm.hidden; } }, 'Bewertung einstellen')
+    ),
+    h('section.card.pln-edit-card', settingsForm),
+    h(
+      'div.pln-flow',
+      step(1, 'Vorlage drucken', 'Der Text liegt nur auf Papier vor.', h('a.button.small', { href: `#/pln/${id}/vorlage` }, 'Drucken'), h('a.small', { href: `#/pln/${id}/vorlage-nta` }, 'große Schrift')),
+      step(2, pln.status === 'open' ? 'Läuft' : pln.status === 'closed' ? 'Beendet' : 'Freigeben', 'Nachteilsausgleich vorher in der Tabelle ankreuzen.', releaseStep),
+      step(3, 'Abschriften', `${done} abgegeben, ${running} schreiben gerade.`, h('a.button.small', { href: `/api/plns/${id}/abschriften.pdf`, download: true }, `PDF (${done})`))
     ),
     h(
       'section.card',
-      h('h2', 'Ablauf'),
       h(
-        'ol.steps',
-        h('li', h('a', { href: `#/pln/${id}/vorlage` }, 'Vorlage drucken'), ' und austeilen. Der Text erscheint bei den Schülern nicht am Bildschirm. Für den Nachteilsausgleich gibt es eine ', h('a', { href: `#/pln/${id}/vorlage-nta` }, 'Vorlage mit größerer Schrift'), '.'),
-        h('li', 'Nachteilsausgleich unten in der Tabelle ankreuzen, bevor die Person startet. Dann PLN freigeben. Jede Person startet selbst und hat ab dem Start die eingestellte Zeit.'),
-        h('li', 'Nach Ablauf der Zeit wird der Stand unverändert gespeichert. Danach die Abschriften als PDF herunterladen.')
+        'div.pln-section-head',
+        h('h2', 'Teilnahme'),
+        h('div.pln-head-actions', h('button.small', { onclick: reload }, 'Aktualisieren'), h('button.small.danger', { onclick: confirmDo(`PLN „${pln.title}“ mit allen Abschriften löschen?`, async () => { await del(`/api/plns/${id}`); location.hash = `#/klasse/${pln.class_id}`; }) }, 'PLN löschen'))
       ),
-      h(
-        'div.toolbar',
-        h('a.button', { href: `#/pln/${id}/vorlage` }, 'Vorlage drucken'),
-        ...statusButtons,
-        h('a.button', { href: `/api/plns/${id}/abschriften.pdf`, download: true }, `Abschriften als PDF (${done})`),
-        h('button', { onclick: reload }, 'Aktualisieren'),
-        h(
-          'button.danger',
-          { onclick: confirmDo(`PLN „${pln.title}“ mit allen Abschriften löschen?`, async () => { await del(`/api/plns/${id}`); location.hash = `#/klasse/${pln.class_id}`; }) },
-          'Löschen'
-        )
-      )
-    ),
-    h(
-      'section.card',
-      h('h2', `Teilnahme (${done} abgegeben, ${running} schreiben gerade)`),
       h(
         'div.table-wrap',
         h(
-          'table.table',
+          'table.table.pln-table',
           h(
             'thead',
             h(
               'tr',
-              ['Pseudonym', 'Benutzername', 'Status', 'Beginn', 'Anschläge', 'Fehler', third, 'Note (Vorschlag)', 'NTA', 'Ohne 10 F.', ''].filter((c) => c !== null).map((c) => h('th', c))
+              ['Schüler', 'Status', 'Anschläge', 'Fehler', third, 'Note', h('span', { title: `Nachteilsausgleich: ${ntaInfo}` }, 'NTA'), h('span', { title: 'Zehn-Finger-System nicht angewendet: Note 6' }, 'Ohne 10 F.'), '']
+                .filter((c) => c !== null)
+                .map((c) => h('th', c))
             )
           ),
           h(
@@ -308,29 +341,26 @@ export async function plnView(app, { id }) {
             rows.map((r) =>
               h(
                 'tr',
-                h('td', r.display_name),
-                h('td.mono', r.username),
-                h(
-                  'td',
-                  r.state === 'none' ? h('span.muted', 'nicht begonnen') : r.state === 'running' ? h('span.tag', `schreibt bis ${time(r.end_at)}`) : 'abgegeben',
-                  r.left_count ? h('span.tag.tag-test', { title: 'Prüfungsfenster verlassen' }, ` ${r.left_count}× verlassen`) : null
-                ),
-                h('td', r.started_at ? fmtDate(r.started_at) : '–'),
+                h('td', h('div', r.display_name), h('div.mono.muted.small', r.username)),
+                h('td', stateCell(r), r.left_count ? h('div', h('span.tag.tag-test', { title: 'Prüfungsfenster verlassen' }, `${r.left_count}× verlassen`)) : null),
                 h('td', r.gross ?? '–'),
                 h('td', r.errors ?? '–'),
-                third ? h('td', r.grade == null ? '–' : s.mode === 'count' ? r.missingLines : r.grade.percent != null ? `${r.grade.percent.toLocaleString('de-DE', { minimumFractionDigits: 3 })} %` : '–') : null,
-                h('td', r.grade ? h('b', { title: (r.grade.steps || []).join('\n') }, r.grade.grade) : '–', r.grade?.steps?.length ? h('div.muted.small.pln-steps', r.grade.steps.join(' · ')) : null),
+                third ? h('td', thirdCell(r)) : null,
                 h(
                   'td',
-                  h('label.inline', { title: ntaInfo }, h('input', { type: 'checkbox', checked: r.lrs, disabled: r.state !== 'none' && s.mode !== 'count', onchange: setFlag(r, 'lrs') }), r.lrs ? ntaInfo : '')
+                  r.grade
+                    ? h('details.pln-grade', h('summary', h('b.pln-grade-no', r.grade.grade)), h('div.small.muted', (r.grade.steps || []).map((x) => h('div', x))))
+                    : '–'
                 ),
+                h('td', h('input', { type: 'checkbox', checked: r.lrs, title: `Nachteilsausgleich: ${ntaInfo}`, disabled: r.state !== 'none' && s.mode !== 'count', onchange: setFlag(r, 'lrs') })),
                 h('td', h('input', { type: 'checkbox', checked: r.no_touch, title: 'Zehn-Finger-System nicht angewendet: Note 6', onchange: setFlag(r, 'noTouch') })),
                 h(
                   'td',
                   r.state !== 'none'
                     ? h(
-                        'button.small',
+                        'button.link.small',
                         {
+                          title: 'Abschrift löschen, die Person kann neu beginnen (z. B. als Nachholer)',
                           onclick: confirmDo(`Abschrift von ${r.display_name} löschen? Die Person kann den PLN danach neu beginnen (z. B. als Nachholer).`, async () => {
                             await del(`/api/plns/${id}/attempts/${r.user_id}`);
                             reload();
@@ -345,12 +375,11 @@ export async function plnView(app, { id }) {
           )
         )
       ),
-      h('p.muted.small', `NTA: Nachteilsausgleich bei LRS/Legasthenie (${ntaInfo || 'in den Einstellungen festlegen'}), vor dem Start ankreuzen. Ohne 10 F.: Zehn-Finger-System nicht angewendet, Note 6.`)
-    ),
-    h('section.card', h('details', h('summary', h('b', 'Bewertung genau einstellen')), settingsForm))
+      h('p.pln-hint', `NTA: Nachteilsausgleich bei LRS/Legasthenie (${ntaInfo || 'in den Einstellungen festlegen'}), vor dem Start ankreuzen. Ohne 10 F.: Note 6. Ein Klick auf die Note zeigt den Rechenweg.`)
+    )
   );
   if (pln.status === 'open') {
-    const timer = setTimeout(() => app.isConnected && reload(), 15000);
+    const timer = setTimeout(() => app.isConnected && settingsForm.hidden && reload(), 15000);
     state.cleanup = () => clearTimeout(timer);
   }
 }
@@ -406,7 +435,7 @@ export async function plnSheetView(app, { id, nta = false }) {
       `article.pln-sheet${nta ? '.pln-sheet-large' : ''}`,
       h('h1', plnHeading(s)),
       h('p.pln-meta', [schoolName, `Klasse ${pln.className}`, pln.title].filter(Boolean).join(' · ')),
-      h('p.pln-fill', 'Pseudonym: ________________________   Datum: ______________'),
+      h('p.pln-fill', h('b', 'Name:'), ' ________________________________   ', h('b', 'Datum:'), ' ______________'),
       h(
         'ul.pln-hints',
         h('li', h('b', 'Es ist ein Fließtext im Zehn-Finger-System zu schreiben.')),
