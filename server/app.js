@@ -22,7 +22,7 @@ import { vidisRoutes, vidisConfigured } from './vidis.js';
 import { createDemo, hasDemo, removeDemo, prefixFor, DEMO_PASSWORD } from './demo.js';
 import { composeText, evaluatePln, gradePln, note1Chars, note1Position, PLN_DURATION_MS, PLN_GRACE_MS, PLN_MAX_CHARS, PLN_TITLE } from './pln.js';
 import { writePlnPdf } from './pln-pdf.js';
-import { LESSONS, lessonById, starsFor, PASS_ERROR_RATE } from '../public/js/course.js';
+import { LESSONS, lessonById, starsFor, PASS_ERROR_RATE, PASS_ERROR_RATE_MAX } from '../public/js/course.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COUNTDOWN_MS = 3000;
@@ -378,36 +378,59 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     return new Map(rows.map((r) => [r.lesson_id, r]));
   }
 
+  function manualUnlocks(userId) {
+    return new Set(db.prepare('SELECT lesson_id FROM course_unlocks WHERE user_id = ?').all(userId).map((r) => r.lesson_id));
+  }
+
+  // Fehlergrenze der Klasse; ohne Klasse (z. B. frisch über VIDIS angemeldet) gilt der Standard.
+  function passRateFor(userId) {
+    const row = db.prepare('SELECT c.course_pass_rate FROM users u JOIN classes c ON c.id = u.class_id WHERE u.id = ?').get(userId);
+    return row ? row.course_pass_rate : PASS_ERROR_RATE;
+  }
+
+  // Eine Lektion ist frei, wenn die vorherige bestanden ist oder die Lehrkraft sie freigeschaltet hat.
+  function lessonStates(progress, manual) {
+    return LESSONS.map((l, i) => {
+      const p = progress.get(l.id);
+      const passed = !!p?.passed_at;
+      const prevPassed = i === 0 || !!progress.get(LESSONS[i - 1].id)?.passed_at;
+      const byTeacher = manual.has(l.id);
+      return { lesson: l, p, passed, byTeacher, unlocked: prevPassed || byTeacher };
+    });
+  }
+
   function lessonUnlocked(userId, lessonId) {
-    const idx = LESSONS.findIndex((l) => l.id === lessonId);
-    if (idx <= 0) return true;
-    return !!courseProgress(userId).get(LESSONS[idx - 1].id)?.passed_at;
+    return !!lessonStates(courseProgress(userId), manualUnlocks(userId)).find((x) => x.lesson.id === lessonId)?.unlocked;
   }
 
   function courseList(userId) {
-    const progress = courseProgress(userId);
-    let unlocked = true;
-    return LESSONS.map((l) => {
-      const p = progress.get(l.id);
-      const item = {
-        id: l.id,
-        title: l.title,
-        goal: l.goal,
-        unlocked,
-        attempts: p?.attempts ?? 0,
-        bestApm: p?.best_apm ?? null,
-        bestErrorRate: p?.best_error_rate ?? null,
-        stars: p?.stars ?? 0,
-        passed: !!p?.passed_at,
-      };
-      unlocked = unlocked && item.passed;
-      return item;
-    });
+    return lessonStates(courseProgress(userId), manualUnlocks(userId)).map(({ lesson: l, p, passed, byTeacher, unlocked }) => ({
+      id: l.id,
+      title: l.title,
+      goal: l.goal,
+      unlocked,
+      unlockedByTeacher: byTeacher && !passed,
+      attempts: p?.attempts ?? 0,
+      bestApm: p?.best_apm ?? null,
+      bestErrorRate: p?.best_error_rate ?? null,
+      stars: p?.stars ?? 0,
+      passed,
+    }));
+  }
+
+  // Kompakter Kursstand je Lektion für die Klassenübersicht: Status und Sterne.
+  function courseStrip(userId, progress, manual) {
+    return lessonStates(progress.get(userId) || new Map(), manual.get(userId) || new Set()).map(({ p, passed, byTeacher, unlocked }) => ({
+      s: passed ? 'passed' : byTeacher ? 'teacher' : unlocked ? 'open' : 'locked',
+      stars: p?.stars ?? 0,
+      attempts: p?.attempts ?? 0,
+    }));
   }
 
   function updateCourse(userId, lesson, m) {
     const before = courseProgress(userId).get(lesson.id);
-    const stars = starsFor(m, lesson);
+    const passErrorRate = passRateFor(userId);
+    const stars = starsFor(m, lesson, passErrorRate);
     const passedNow = stars > 0;
     db.prepare(
       `INSERT INTO course_progress (user_id, lesson_id, attempts, best_apm, best_error_rate, stars, passed_at) VALUES (?, ?, 1, ?, ?, ?, ?)
@@ -423,13 +446,13 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       stars,
       passed: passedNow,
       newlyPassed: passedNow && !before?.passed_at,
-      passErrorRate: PASS_ERROR_RATE,
+      passErrorRate,
       next: next ? { id: next.id, title: next.title } : null,
     };
   }
 
   app.get('/api/me/course', auth('student'), (req, res) => {
-    res.json({ passErrorRate: PASS_ERROR_RATE, lessons: courseList(req.user.id) });
+    res.json({ passErrorRate: passRateFor(req.user.id), lessons: courseList(req.user.id) });
   });
 
   app.get('/api/me/errors', auth(), (req, res) => {
@@ -575,8 +598,29 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     const cls = ownClass(req);
     const name = req.body.name !== undefined ? str(req.body.name, { max: 40, name: 'Klassenname' }) : cls.name;
     const lb = req.body.leaderboard !== undefined ? (req.body.leaderboard ? 1 : 0) : cls.leaderboard_enabled;
-    db.prepare('UPDATE classes SET name = ?, leaderboard_enabled = ? WHERE id = ?').run(name, lb, cls.id);
-    res.json({ ok: true });
+    let rate = cls.course_pass_rate;
+    if (req.body.passErrorRate !== undefined) {
+      rate = Number(String(req.body.passErrorRate).replace(',', '.'));
+      if (!Number.isFinite(rate) || rate < 0 || rate > PASS_ERROR_RATE_MAX) throw bad(`Die Fehlergrenze muss zwischen 0 und ${PASS_ERROR_RATE_MAX} % liegen.`);
+      rate = Math.round(rate * 10) / 10;
+    }
+    let newlyPassed = 0;
+    tx(db, () => {
+      db.prepare('UPDATE classes SET name = ?, leaderboard_enabled = ?, course_pass_rate = ? WHERE id = ?').run(name, lb, rate, cls.id);
+      // Großzügigere Grenze: Wer mit seinem besten Versuch schon darunter liegt, hat die Lektion jetzt bestanden.
+      // Eine strengere Grenze nimmt bereits bestandene Lektionen nicht wieder weg.
+      if (rate > cls.course_pass_rate) {
+        newlyPassed = Number(
+          db
+            .prepare(
+              `UPDATE course_progress SET passed_at = ?, stars = MAX(stars, 1)
+               WHERE passed_at IS NULL AND best_error_rate IS NOT NULL AND best_error_rate <= ? AND user_id IN (SELECT id FROM users WHERE class_id = ?)`
+            )
+            .run(Date.now(), rate, cls.id).changes
+        );
+      }
+    });
+    res.json({ ok: true, passErrorRate: rate, newlyPassed });
   });
 
   app.delete('/api/classes/:id', auth('teacher'), (req, res) => {
@@ -599,14 +643,50 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
          WHERE u.class_id = ? GROUP BY u.id ORDER BY u.display_name`
       )
       .all(cls.id);
+    const progress = new Map();
+    for (const r of db.prepare('SELECT cp.* FROM course_progress cp JOIN users u ON u.id = cp.user_id WHERE u.class_id = ?').all(cls.id)) {
+      if (!progress.has(r.user_id)) progress.set(r.user_id, new Map());
+      progress.get(r.user_id).set(r.lesson_id, r);
+    }
+    const manual = new Map();
+    for (const r of db.prepare('SELECT cu.user_id, cu.lesson_id FROM course_unlocks cu JOIN users u ON u.id = cu.user_id WHERE u.class_id = ?').all(cls.id)) {
+      if (!manual.has(r.user_id)) manual.set(r.user_id, new Set());
+      manual.get(r.user_id).add(r.lesson_id);
+    }
     res.json({
       id: cls.id,
       name: cls.name,
       leaderboard: !!cls.leaderboard_enabled,
       joinCode: cls.join_code,
+      passErrorRate: cls.course_pass_rate,
       lessonCount: LESSONS.length,
-      students: students.map((s) => ({ ...s, level: levelFor(s.xp) })),
+      lessons: LESSONS.map((l) => ({ id: l.id, title: l.title })),
+      students: students.map((s) => ({ ...s, level: levelFor(s.xp), course: courseStrip(s.id, progress, manual) })),
     });
+  });
+
+  // Lektionen von Hand freischalten oder die Freischaltung zurücknehmen. Ohne studentIds gilt es für die ganze Klasse,
+  // mit upTo zusätzlich für alle Lektionen davor. Bereits bestandene Lektionen bleiben in jedem Fall bestanden.
+  app.post('/api/classes/:id/unlocks', auth('teacher'), (req, res) => {
+    const cls = ownClass(req);
+    const idx = LESSONS.findIndex((l) => l.id === String(req.body.lessonId));
+    if (idx < 0) throw bad('Unbekannte Lektion.');
+    const lessonIds = (req.body.upTo ? LESSONS.slice(0, idx + 1) : [LESSONS[idx]]).map((l) => l.id);
+    let students = db.prepare("SELECT id FROM users WHERE class_id = ? AND role = 'student'").all(cls.id).map((r) => r.id);
+    if (Array.isArray(req.body.studentIds) && req.body.studentIds.length) {
+      const wanted = new Set(req.body.studentIds.map(Number));
+      students = students.filter((id) => wanted.has(id));
+    }
+    if (!students.length) throw bad('Keine Schüler ausgewählt.');
+    const lock = !!req.body.lock;
+    const stmt = lock
+      ? db.prepare('DELETE FROM course_unlocks WHERE user_id = ? AND lesson_id = ?')
+      : db.prepare('INSERT OR IGNORE INTO course_unlocks (user_id, lesson_id, unlocked_at) VALUES (?, ?, ?)');
+    let changed = 0;
+    tx(db, () => {
+      for (const userId of students) for (const lessonId of lessonIds) changed += Number((lock ? stmt.run(userId, lessonId) : stmt.run(userId, lessonId, Date.now())).changes);
+    });
+    res.json({ ok: true, changed });
   });
 
   // Beitrittscode: Wer sich über VIDIS anmeldet, kommt ohne Klasse an und tritt mit diesem Code bei.
@@ -716,6 +796,8 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       weakKeys: weakKeys(db, s.id),
       errors: errorProfile(db, s.id),
       course: courseList(s.id),
+      classId: s.class_id,
+      passErrorRate: passRateFor(s.id),
     });
   });
 

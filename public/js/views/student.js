@@ -1,5 +1,5 @@
 import { openPlnCards } from './pln.js';
-import { append, errorBox, fmtDate, fmtDuration, fmtNum, formData, get, h, patch, post, sparkline, toast } from '../ui.js';
+import { append, errorBox, fmtDate, fmtDuration, fmtNum, fmtRate, formData, get, h, patch, post, sparkline, toast } from '../ui.js';
 import { Trainer } from '../trainer.js';
 import { contrastExercise, randomWords, weakExercise, wordsExercise } from '../words.js';
 import { LESSONS, lessonById } from '../course.js';
@@ -258,7 +258,7 @@ export function resultPanel(res, raw, { again, back, test = false }) {
 
 function courseOutcome(c) {
   if (!c.passed) {
-    return h('p.notice', `Noch nicht bestanden: Für die nächste Lektion brauchst du höchstens ${c.passErrorRate} % Fehler. Lass dir Zeit, Genauigkeit geht vor Tempo.`);
+    return h('p.notice', `Noch nicht bestanden: Für die nächste Lektion brauchst du höchstens ${fmtRate(c.passErrorRate)} % Fehler. Lass dir Zeit, Genauigkeit geht vor Tempo.`);
   }
   return h(
     'div',
@@ -281,7 +281,7 @@ export async function courseView(app) {
     app,
     h('p', h('a', { href: '#/' }, '← Zurück')),
     h('h1', 'Kurs'),
-    h('p.muted', `Die Lektionen bauen aufeinander auf. Mit höchstens ${passErrorRate} % Fehlern ist eine Lektion bestanden und die nächste wird frei. Für mehr Sterne zählt dann auch das Tempo.`),
+    h('p.muted', `Die Lektionen bauen aufeinander auf. Mit höchstens ${fmtRate(passErrorRate)} % Fehlern ist eine Lektion bestanden und die nächste wird frei. Für mehr Sterne zählt dann auch das Tempo.`),
     h('p', `${done} von ${lessons.length} Lektionen bestanden`),
     h(
       'ol.lessons',
@@ -295,7 +295,7 @@ export async function courseView(app) {
             l.unlocked ? h('a', { href: `#/kurs/${l.id}` }, h('strong', l.title)) : h('strong', l.title),
             h('span.muted.small', l.goal)
           ),
-          h('div.lesson-meta', l.passed ? stars(l.stars) : l.unlocked ? h('span.tag', 'offen') : h('span.muted.small', 'gesperrt'), l.bestApm ? h('span.muted.small', `${fmtNum(l.bestApm)} Anschl./min`) : null)
+          h('div.lesson-meta', l.passed ? stars(l.stars) : l.unlockedByTeacher ? h('span.tag', 'von deiner Lehrkraft freigeschaltet') : l.unlocked ? h('span.tag', 'offen') : h('span.muted.small', 'gesperrt'), l.bestApm ? h('span.muted.small', `${fmtNum(l.bestApm)} Anschl./min`) : null)
         )
       )
     )

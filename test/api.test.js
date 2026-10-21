@@ -125,6 +125,47 @@ test('Gesamtablauf: Einrichtung, Lehrkraft, Klasse, Übung, Test, Note, Export',
   course = (await s1.get('/api/me/course')).data;
   assert.equal(course.lessons[1].unlocked, true);
 
+  // Fehlergrenze je Klasse: großzügiger macht knapp verfehlte Lektionen nachträglich bestanden, strenger nimmt nichts weg.
+  const s2 = client();
+  await s2.post('/api/login', { username: c2.username, password: c2.password });
+  const s2Id = (await teacher.get(`/api/classes/${classId}`)).data.students.find((s) => s.username === c2.username).id;
+  assert.equal((await s2.post('/api/results', { kind: 'course', lessonId: 'grundreihe', durationMs: 60000, gross: 100, correct: 95, errors: 5 })).data.course.passed, false);
+  assert.equal((await teacher.patch(`/api/classes/${classId}`, { passErrorRate: 25 })).status, 400);
+  const looser = await teacher.patch(`/api/classes/${classId}`, { passErrorRate: '6,5' });
+  assert.equal(looser.data.passErrorRate, 6.5);
+  assert.equal(looser.data.newlyPassed, 1);
+  let c2Course = (await s2.get('/api/me/course')).data;
+  assert.equal(c2Course.passErrorRate, 6.5);
+  assert.equal(c2Course.lessons[0].passed, true);
+  assert.equal((await s2.post('/api/results', { kind: 'course', lessonId: 'oben-links', durationMs: 60000, gross: 100, correct: 94, errors: 6 })).data.course.passed, true);
+  await teacher.patch(`/api/classes/${classId}`, { passErrorRate: 3 });
+  c2Course = (await s2.get('/api/me/course')).data;
+  assert.equal(c2Course.passErrorRate, 3);
+  assert.equal(c2Course.lessons[1].passed, true);
+  assert.equal((await s2.post('/api/results', { kind: 'course', lessonId: 'oben-rechts', durationMs: 60000, gross: 100, correct: 95, errors: 5 })).data.course.passed, false);
+
+  // Lektionen von Hand freischalten: einzeln, bis einschließlich, und wieder zurücknehmen.
+  assert.equal((await s2.post('/api/results', { kind: 'course', lessonId: 'unten', durationMs: 60000, gross: 100, correct: 100, errors: 0 })).status, 400);
+  assert.equal((await teacher.post(`/api/classes/${classId}/unlocks`, { lessonId: 'unten', studentIds: [s2Id] })).data.changed, 1);
+  c2Course = (await s2.get('/api/me/course')).data;
+  assert.equal(c2Course.lessons[3].unlocked, true);
+  assert.equal(c2Course.lessons[3].unlockedByTeacher, true);
+  assert.equal(c2Course.lessons[4].unlocked, false);
+  assert.equal((await s2.post('/api/results', { kind: 'course', lessonId: 'unten', durationMs: 60000, gross: 100, correct: 99, errors: 1 })).data.course.passed, true);
+  assert.equal((await s2.get('/api/me/course')).data.lessons[4].unlocked, true);
+  let strip = (await teacher.get(`/api/classes/${classId}`)).data.students.find((s) => s.id === s2Id).course;
+  assert.deepEqual(strip.slice(0, 5).map((c) => c.s), ['passed', 'passed', 'open', 'passed', 'open']);
+  await teacher.post(`/api/classes/${classId}/unlocks`, { lessonId: 'alle-buchstaben', upTo: true });
+  assert.equal((await s1.get('/api/me/course')).data.lessons.slice(0, 5).every((l) => l.unlocked), true);
+  await teacher.post(`/api/classes/${classId}/unlocks`, { lessonId: 'alle-buchstaben', upTo: true, lock: true });
+  course = (await s1.get('/api/me/course')).data;
+  assert.deepEqual(course.lessons.slice(0, 5).map((l) => l.unlocked), [true, true, false, false, false]);
+  // Zurücknehmen lässt Bestandenes stehen.
+  strip = (await teacher.get(`/api/classes/${classId}`)).data.students.find((s) => s.id === s2Id).course;
+  assert.equal(strip[3].s, 'passed');
+  assert.equal((await teacher.post(`/api/classes/${classId}/unlocks`, { lessonId: 'gibtsnicht' })).status, 400);
+  assert.equal((await s1.post(`/api/classes/${classId}/unlocks`, { lessonId: 'unten' })).status, 403);
+
   // Fehleranalyse sammelt Verwechslungen und Wörter.
   await s1.post('/api/results', { kind: 'focus', durationMs: 60000, gross: 100, correct: 98, errors: 2, confusions: [['z', 'y', 2]], errorWords: { Ölfass: 1 } });
   const prof = (await s1.get('/api/me/errors')).data;
@@ -216,6 +257,8 @@ test('Gesamtablauf: Einrichtung, Lehrkraft, Klasse, Übung, Test, Note, Export',
   const teacher2 = client();
   await teacher2.post('/api/login', { username: 'maier', password: t2.data.password });
   assert.equal((await teacher2.get(`/api/classes/${classId}`)).status, 404);
+  assert.equal((await teacher2.post(`/api/classes/${classId}/unlocks`, { lessonId: 'unten' })).status, 404);
+  assert.equal((await teacher2.patch(`/api/classes/${classId}`, { passErrorRate: 10 })).status, 404);
   assert.equal((await teacher2.get(`/api/assignments/${testA.data.id}/results`)).status, 404);
 
   // Export.

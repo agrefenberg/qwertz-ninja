@@ -1,7 +1,8 @@
-import { append, del, errorBox, fmtDate, fmtDuration, fmtNum, formData, get, h, passwordInput, patch, post, put, toast } from '../ui.js';
+import { append, del, errorBox, fmtDate, fmtDuration, fmtNum, fmtRate, formData, get, h, passwordInput, patch, post, put, toast } from '../ui.js';
 import { enterStudentView, state } from '../app.js';
 import { errorAnalysis, stars } from './student.js';
 import { plnSection } from './pln.js';
+import { courseMiniBar, courseSection } from './course-overview.js';
 
 const KIND_LABEL = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test' };
 
@@ -69,6 +70,14 @@ export async function classView(app, { id }) {
     app.replaceChildren();
     classView(app, { id });
   };
+  // Neu aufbauen, ohne dass die Seite nach oben springt.
+  const refresh = async () => {
+    const y = window.scrollY;
+    const fresh = h('div');
+    await classView(fresh, { id });
+    app.replaceChildren(...fresh.childNodes);
+    window.scrollTo(0, y);
+  };
 
   const createForm = h(
     'form.inline-form',
@@ -119,6 +128,7 @@ export async function classView(app, { id }) {
     ),
     h('section.card', h('h2', 'Aufgaben und Tests'), assignmentList(assignments, reload), assignmentForm(id, texts, schemes, reload)),
     plnSection(id, texts, schemes),
+    courseSection(cls, refresh),
     h(
       'section.card',
       h('h2', `Schüler (${cls.students.length})`),
@@ -193,11 +203,11 @@ function studentTable(cls, reload) {
   return h(
     'div',
     h('div.toolbar', reprint, h('span.muted.small', 'Wähle einzelne Schüler aus, wenn nur deren Streifen fehlen. Die Passwörter werden dabei neu vergeben.')),
-    studentRows(students, boxes, all, sync, reload, cls.lessonCount)
+    studentRows(students, boxes, all, sync, reload, cls.lessons)
   );
 }
 
-function studentRows(students, boxes, all, sync, reload, lessonCount) {
+function studentRows(students, boxes, all, sync, reload, lessons) {
   return h(
     'div.table-wrap',
     h(
@@ -217,7 +227,7 @@ function studentRows(students, boxes, all, sync, reload, lessonCount) {
             h('td.mono', s.username),
             h('td', s.level.belt),
             h('td', s.runs),
-            h('td', `${s.lessons_passed}/${lessonCount}`),
+            h('td', courseMiniBar(s.course, lessons)),
             h('td', fmtNum(s.avg_apm)),
             h('td', s.avg_error_rate != null ? `${fmtNum(s.avg_error_rate, 1)} %` : '–'),
             h('td', fmtDate(s.last_active)),
@@ -433,6 +443,59 @@ export async function assignmentResultsView(app, { id }) {
 
 // ---------- Einzelne Schüler ----------
 
+// Lektionsliste mit Stand und der Möglichkeit, einzelne Lektionen freizuschalten.
+function studentCourse(s, studentId, reload) {
+  const passed = s.course.filter((l) => l.passed).length;
+  const toggle = (l, lock) => async () => {
+    try {
+      await post(`/api/classes/${s.classId}/unlocks`, { lessonId: l.id, studentIds: [Number(studentId)], lock });
+      toast(lock ? `Freischaltung von ${l.title} zurückgenommen` : `${l.title} freigeschaltet`);
+      reload();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+  return h(
+    'div',
+    h('p', `${passed} von ${s.course.length} Lektionen bestanden · bestanden mit höchstens ${fmtRate(s.passErrorRate)} % Fehlern`),
+    h('div.progress.progress-light', (() => {
+      const bar = h('div.progress-bar');
+      bar.style.width = `${(passed / s.course.length) * 100}%`;
+      return bar;
+    })()),
+    h(
+      'ol.lessons.lessons-compact',
+      s.course.map((l, i) =>
+        h(
+          'li',
+          { class: l.passed ? 'passed' : l.unlockedByTeacher ? 'teacher' : l.unlocked ? 'open' : 'locked' },
+          h('span.lesson-no', String(i + 1)),
+          h(
+            'div.lesson-body',
+            h('strong', l.title),
+            h(
+              'span.muted.small',
+              l.attempts
+                ? `${l.attempts} ${l.attempts === 1 ? 'Versuch' : 'Versuche'} · bestes Tempo ${fmtNum(l.bestApm)} Anschl./min · beste Fehlerquote ${fmtNum(l.bestErrorRate, 1)} %`
+                : 'noch nicht geübt'
+            )
+          ),
+          h(
+            'div.lesson-meta',
+            l.passed
+              ? stars(l.stars)
+              : l.unlockedByTeacher
+                ? h('span.lesson-actions', h('span.tag', 'von dir freigeschaltet'), h('button.small', { onclick: toggle(l, true) }, 'Zurücknehmen'))
+                : l.unlocked
+                  ? h('span.tag', 'frei')
+                  : h('button.small', { onclick: toggle(l, false) }, 'Freischalten')
+          )
+        )
+      )
+    )
+  );
+}
+
 export async function studentView(app, { id }) {
   const s = await get(`/api/students/${id}/results`);
   append(app, 
@@ -440,11 +503,11 @@ export async function studentView(app, { id }) {
     h('h1', s.displayName),
     h('p.muted.mono', s.username),
     h('h2', 'Kurs'),
-    h(
-      'p',
-      `${s.course.filter((l) => l.passed).length} von ${s.course.length} Lektionen bestanden. `,
-      s.course.filter((l) => l.passed).map((l) => h('span.word-chip', l.title, ' ', stars(l.stars)))
-    ),
+    studentCourse(s, id, () => {
+      const y = window.scrollY;
+      app.replaceChildren();
+      studentView(app, { id }).then(() => window.scrollTo(0, y));
+    }),
     h('h2', 'Fehleranalyse'),
     errorAnalysis(s.errors, { practice: false }),
     h('h2', 'Ergebnisse'),

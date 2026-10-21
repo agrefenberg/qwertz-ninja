@@ -1,13 +1,15 @@
 // Aufbauender Kurs: Lektionen bauen aufeinander auf, die nächste wird freigeschaltet,
-// sobald die vorherige mit höchstens PASS_ERROR_RATE % Fehlern geschafft ist.
+// sobald die vorherige mit höchstens PASS_ERROR_RATE % Fehlern geschafft ist. Die Lehrkraft kann die
+// Grenze je Klasse ändern und einzelne Lektionen auch direkt freischalten.
 import { shuffle } from './words.js';
 
 export const PASS_ERROR_RATE = 3;
+export const PASS_ERROR_RATE_MAX = 20;
 
 // Sterne: 1 = bestanden, 2 = zusätzlich schnell, 3 = schnell und fast fehlerfrei.
-export function starsFor({ apm, errorRate }, lesson) {
-  if (errorRate > PASS_ERROR_RATE) return 0;
-  if (apm >= lesson.fast && errorRate <= 1) return 3;
+export function starsFor({ apm, errorRate }, lesson, passErrorRate = PASS_ERROR_RATE) {
+  if (errorRate > passErrorRate) return 0;
+  if (apm >= lesson.fast && errorRate <= Math.min(1, passErrorRate)) return 3;
   if (apm >= lesson.fast * 0.8) return 2;
   return 1;
 }

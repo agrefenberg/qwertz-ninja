@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS classes (
   teacher_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   leaderboard_enabled INTEGER NOT NULL DEFAULT 0,
   join_code TEXT UNIQUE,
+  course_pass_rate REAL NOT NULL DEFAULT 3,
   created_at INTEGER NOT NULL
 );
 
@@ -169,6 +170,14 @@ CREATE TABLE IF NOT EXISTS course_progress (
   PRIMARY KEY (user_id, lesson_id)
 );
 
+-- Von der Lehrkraft freigeschaltete Lektionen (zusätzlich zur Freischaltung durch die vorherige Lektion)
+CREATE TABLE IF NOT EXISTS course_unlocks (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lesson_id TEXT NOT NULL,
+  unlocked_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, lesson_id)
+);
+
 CREATE TABLE IF NOT EXISTS error_pairs (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expected TEXT NOT NULL,
@@ -209,6 +218,7 @@ function migrate(db) {
   if (!has('users', 'school_id')) db.exec('ALTER TABLE users ADD COLUMN school_id INTEGER REFERENCES schools(id) ON DELETE CASCADE');
   if (!has('users', 'external_id')) db.exec('ALTER TABLE users ADD COLUMN external_id TEXT');
   if (!has('classes', 'join_code')) db.exec('ALTER TABLE classes ADD COLUMN join_code TEXT');
+  if (!has('classes', 'course_pass_rate')) db.exec('ALTER TABLE classes ADD COLUMN course_pass_rate REAL NOT NULL DEFAULT 3');
   if (!has('sessions', 'id_token')) db.exec('ALTER TABLE sessions ADD COLUMN id_token TEXT');
   if (!has('sessions', 'preview_class_id')) db.exec('ALTER TABLE sessions ADD COLUMN preview_class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL');
   db.exec(`
