@@ -187,6 +187,34 @@ h3 {
   }
 }
 
+/* Schüleransicht für Lehrkräfte */
+.preview-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  max-width: 1100px;
+  width: calc(100% - 2rem);
+  margin: 0.75rem auto 0;
+  padding: 0.6rem 0.75rem 0.6rem 1.1rem;
+  background: var(--yellow);
+  border-radius: var(--radius-s);
+  font-size: 0.9rem;
+}
+.preview-bar > span {
+  flex: 1 1 22rem;
+}
+.preview-bar b {
+  margin-right: 0.35rem;
+}
+.preview-bar select {
+  background: #fff;
+  padding: 0.3rem 0.6rem;
+}
+body.exam-mode .preview-bar {
+  display: none;
+}
+
 /* ---------- Bausteine ---------- */
 
 .card {
@@ -254,6 +282,38 @@ label.inline {
   margin: 0;
   font-weight: 500;
 }
+/* Passwortfeld mit Augen-Knopf */
+.password-field {
+  position: relative;
+  display: block;
+}
+.password-field input {
+  padding-right: 3rem;
+}
+button.eye {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.3rem;
+  width: 2.3rem;
+  height: 2.3rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: var(--muted);
+}
+button.eye:hover {
+  color: var(--text);
+}
+button.eye svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 input,
 select,
 textarea {
