@@ -1946,9 +1946,20 @@ a.button.small,
   white-space: normal;
 }
 .pln-hints {
-  border: 2px solid #888;
-  border-radius: 10px;
-  padding: 0.5rem 0.9rem 0.5rem 1.8rem;
+  /* Kleingedrucktes: bleibt oben, nimmt aber wenig Platz weg */
+  border: 1px solid #888;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem 0.35rem 1.4rem;
+  font-size: 8.5pt;
+  line-height: 1.35;
+  columns: 2;
+  column-gap: 1.6rem;
+}
+.pln-hints li {
+  break-inside: avoid;
+}
+.pln-sheet-large .pln-hints {
+  font-size: 11pt;
 }
 
 /* ---------- Druckliste mit Zugangsdaten ---------- */
