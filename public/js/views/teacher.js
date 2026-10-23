@@ -257,9 +257,9 @@ function showCredentials(app, { className, credentials }, done) {
   const url = location.origin;
   const school = state.setup?.schoolName || '';
   app.replaceChildren(
-    h('h1', 'Neue Zugangsdaten'),
-    h('p', 'Die Passwörter werden nicht gespeichert und sind nur jetzt sichtbar. Drucke die Liste aus, schneide sie entlang der Linien und verteile die Streifen.'),
-    h('div.toolbar', h('button.primary', { onclick: () => window.print() }, 'Drucken'), h('button', { onclick: done }, 'Fertig')),
+    h('h1.no-print', 'Neue Zugangsdaten'),
+    h('p.no-print', 'Die Passwörter werden nicht gespeichert und sind nur jetzt sichtbar. Drucke die Liste aus, schneide sie entlang der Linien und verteile die Streifen.'),
+    h('div.toolbar.no-print', h('button.primary', { onclick: () => window.print() }, 'Drucken'), h('button', { onclick: done }, 'Fertig')),
     h(
       'div.print-sheet',
       credentials.map((c) =>

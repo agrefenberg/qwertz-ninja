@@ -2014,21 +2014,13 @@ a.button.small,
   body {
     background: #fff;
   }
-  /* Beim Drucken der Zugangsliste nur die Streifen ausgeben. */
-  body:has(.print-sheet) .topbar,
-  body:has(.print-sheet) #app *:not(.print-sheet):not(.print-sheet *):not(:has(.print-sheet)) {
+  /* Ohne :has(), damit auch ältere Browser (z. B. Firefox ESR 115) nur das Blatt drucken. */
+  .topbar,
+  .preview-bar,
+  .no-print {
     display: none !important;
   }
-  body:has(.print-sheet) .container {
-    padding: 0;
-    max-width: none;
-  }
-  /* PLN-Vorlage: nur das Blatt drucken */
-  body:has(.pln-sheet) .topbar,
-  body:has(.pln-sheet) .no-print {
-    display: none !important;
-  }
-  body:has(.pln-sheet) .container {
+  .container {
     padding: 0;
     max-width: none;
   }
