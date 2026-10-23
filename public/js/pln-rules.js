@@ -33,7 +33,7 @@ export const DEFAULTS = {
   oneErrorPerWord: true, // mehrere Tippfehler in einem Wort = ein Fehler
   lastWordFree: true, // letzte Sinneinheit ohne Wertung
   repeatFree: false, // gleich falsch geschriebenes Wort nur einmal werten (Wiederholungsfehler)
-  lineChars: 63, // Zeichen je Zeile auf der Vorlage
+  lineChars: 56, // Zeichen je Zeile auf der Vorlage (passt in Courier New 14 pt auf A4)
   weight: 0.5, // Gewichtung (nur zur Information)
   // percent
   requiredChars: 1000,

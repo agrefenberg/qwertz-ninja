@@ -230,7 +230,7 @@ test('PLN mit Einstellungen: Vorlage nach Richtlinie, Nachteilsausgleich, Note 6
   const plnId = created.data.id;
   let detail = (await teacher.get(`/api/plns/${plnId}`)).data;
   assert.equal(detail.pln.settings.mode, 'count');
-  assert.equal(templateLines(detail.pln.text, 63).length, 10, 'genau 10 Zeilen');
+  assert.equal(templateLines(detail.pln.text, detail.pln.settings.lineChars).length, 10, 'genau 10 Zeilen');
   assert.equal(detail.pln.heading, 'PLN Praktischer Leistungsnachweis 12-Minuten-Abschrift');
   assert.equal(detail.pln.note1_chars, strokes(detail.pln.text, true));
   assert.ok(detail.pln.lrs_pos < detail.pln.text.length);
@@ -247,14 +247,14 @@ test('PLN mit Einstellungen: Vorlage nach Richtlinie, Nachteilsausgleich, Note 6
   const upd = await teacher.put(`/api/plns/${plnId}/settings`, { ...detail.pln.settings, targetLines: 12 });
   assert.equal(upd.data.textChanged, true);
   detail = (await teacher.get(`/api/plns/${plnId}`)).data;
-  assert.equal(templateLines(detail.pln.text, 63).length, 12);
+  assert.equal(templateLines(detail.pln.text, detail.pln.settings.lineChars).length, 12);
   await teacher.patch(`/api/plns/${plnId}`, { status: 'open' });
 
   const s1 = client();
   await s1.post('/api/login', { username: c1.username, password: c1.password });
   const st = (await s1.post(`/api/me/plns/${plnId}/start`)).data;
   assert.equal(st.durationMs, 12 * 60000, 'feste Zeilen: Nachteilsausgleich über weniger Zeilen, nicht über Zeit');
-  const lines = templateLines(detail.pln.text, 63);
+  const lines = templateLines(detail.pln.text, detail.pln.settings.lineChars);
   const ten = lines.slice(0, 10).map((l) => l.text).join(' ');
   await s1.post(`/api/me/plns/${plnId}/save`, { typed: ten, final: true });
 
