@@ -397,25 +397,63 @@ export async function plnSheetView(app, { id, nta = false }) {
   const pos = short ? pln.lrs_pos : pln.note1_pos;
   const goal = short ? pln.lrs_chars : pln.note1_chars;
   const marker = () => h('span.mark1', 'Note 1');
-  // Text mit Note-1-Markierung hinter dem Wort, in dem die Grenze liegt.
+  // Text mit Note-1-Markierung hinter dem Wort, in dem die Grenze liegt. Im Text ist es ein
+  // Strich mit kleinem Etikett darüber, damit die Zeile nicht breiter wird.
   const withMarker = (str, offset) => {
     if (pos < offset || pos > offset + str.length) return str;
     const cut = pos - offset;
-    return [str.slice(0, cut), marker(), str.slice(cut)];
+    return [str.slice(0, cut), h('span.mark1-at', h('span', 'Note 1')), str.slice(cut)];
   };
 
-  let body;
-  if (s.format === 'lines' || s.mode === 'count') {
-    let lines = templateLines(text, s.lineChars, s.capitalDouble);
-    if (short) lines = lines.slice(0, linesFor(s, true));
-    body = h(
-      'table.pln-lines',
-      h('thead', h('tr', h('th', 'Zeile'), h('th', 'Text'), h('th', 'Anschläge'))),
-      h('tbody', lines.map((l) => h('tr', h('td.no', l.no), h('td.txt', withMarker(l.text, l.start)), h('td.no', l.strokes))))
+  // Text immer in festen Zeilen, in Courier New. Nach je n Zeilen ein Abstand, damit man beim
+  // Abschreiben seltener in der Zeile verrutscht. Mit Zeilenangaben zusätzlich Nummer und Anschläge.
+  const withNumbers = s.format === 'lines' || s.mode === 'count';
+  let lines = templateLines(text, s.lineChars, s.capitalDouble);
+  if (short) lines = lines.slice(0, linesFor(s, true));
+  const body = h('div.pln-text');
+  const fitNote = h('span.muted.small.pln-fit');
+  const opts = { size: nta ? 18 : 14, block: 5, ...loadSheetOpts(nta) };
+
+  const renderBody = () => {
+    const gap = (l) => opts.block && l.no % opts.block === 0 && l.no < lines.length;
+    const txt = (l) => withMarker(l.text, l.start);
+    body.replaceChildren(
+      withNumbers
+        ? h(
+            'table.pln-lines',
+            h('thead', h('tr', h('th', 'Zeile'), h('th', 'Text'), h('th', 'Anschläge'))),
+            h('tbody', lines.map((l) => h(`tr${gap(l) ? '.pln-gap' : ''}`, h('td.no', l.no), h('td.txt', txt(l)), h('td.no', l.strokes))))
+          )
+        : h('div.pln-plain', lines.map((l) => h(`div${gap(l) ? '.pln-gap' : ''}`, txt(l))))
     );
-  } else {
-    body = h('p.pln-plain', withMarker(text, 0));
-  }
+    // Passt eine Zeile bei der gewählten Größe nicht aufs Blatt, wird die Schrift verkleinert.
+    // Die Vorlage mit großer Schrift wird quer gedruckt; passt es auch dann nicht, brechen die Zeilen um.
+    const fit = fitPt(lines, withNumbers, nta);
+    const pt = nta ? opts.size : Math.min(opts.size, fit);
+    body.style.setProperty('--pln-pt', `${pt}pt`);
+    body.classList.toggle('pln-wrap', nta && fit < opts.size);
+    fitNote.textContent =
+      !nta && pt < opts.size
+        ? `Damit jede Zeile aufs Blatt passt, wird mit ${dec(pt)} pt gedruckt. Für ${opts.size} pt in den Einstellungen „Zeichen je Zeile“ auf höchstens ${maxChars(opts.size, withNumbers)} stellen.`
+        : '';
+  };
+  const select = (key, label, values, fmt) =>
+    h(
+      'label.inline',
+      label,
+      h(
+        'select',
+        {
+          onchange: (e) => {
+            opts[key] = Number(e.target.value);
+            saveSheetOpts(nta, opts);
+            renderBody();
+          },
+        },
+        values.map((v) => h('option', { value: v, selected: v === opts[key] }, fmt(v)))
+      )
+    );
+  renderBody();
   const minutes = nta && s.lrsTimePct ? Math.round(s.durationMin * (1 + s.lrsTimePct / 100) * 10) / 10 : s.durationMin;
   const goalInfo = `${fmtNum(goal)} Anschläge in ${dec(minutes)} Minuten`;
   const goalHint =
@@ -429,7 +467,10 @@ export async function plnSheetView(app, { id, nta = false }) {
       'div.toolbar.no-print',
       h('a', { href: `#/pln/${id}` }, '← Zurück'),
       h('button.primary', { onclick: () => window.print() }, 'Drucken'),
-      h('span.muted.small', nta ? 'Vorlage für den Nachteilsausgleich: größere Schrift.' : 'Gedruckt wird in 12 Punkt mit eineinhalbfachem Zeilenabstand.')
+      select('size', 'Schrift', [12, 13, 14, 15, 16, 18, 20], (v) => `${v} pt`),
+      select('block', 'Abstand nach je', [0, 3, 4, 5, 6, 8, 10], (v) => (v ? `${v} Zeilen` : 'kein Abstand')),
+      h('span.muted.small', nta ? 'Vorlage für den Nachteilsausgleich: große Schrift, Querformat.' : 'Courier New, eineinhalbfacher Zeilenabstand.'),
+      fitNote
     ),
     h(
       `article.pln-sheet${nta ? '.pln-sheet-large' : ''}`,
@@ -448,6 +489,30 @@ export async function plnSheetView(app, { id, nta = false }) {
       body
     )
   );
+}
+
+// Druckbreite auf A4 (210 mm − 2 × 10 mm Rand, quer 297 mm − 2 × 10 mm), davon Zeilennummer und Anschläge abgezogen.
+const PT_PER_MM = 72 / 25.4;
+const textWidthPt = (withNumbers, landscape = false) => ((landscape ? 277 : 190) - (withNumbers ? 20 : 0)) * PT_PER_MM;
+// Courier New: jedes Zeichen ist 0,6 × Schriftgröße breit. Die Markierung im Text braucht keine Breite.
+function fitPt(lines, withNumbers, landscape) {
+  const widest = Math.max(...lines.map((l) => l.text.length), 1);
+  return Math.floor((textWidthPt(withNumbers, landscape) / (widest * 0.6)) * 2) / 2;
+}
+const maxChars = (pt, withNumbers) => Math.floor(textWidthPt(withNumbers) / (pt * 0.6));
+
+// Schriftgröße und Abstand merkt sich der Browser, getrennt für die normale und die große Vorlage.
+function loadSheetOpts(nta) {
+  try {
+    return JSON.parse(localStorage.getItem(`qn-pln-sheet-${nta ? 'gross' : 'normal'}`)) || {};
+  } catch {
+    return {};
+  }
+}
+function saveSheetOpts(nta, opts) {
+  try {
+    localStorage.setItem(`qn-pln-sheet-${nta ? 'gross' : 'normal'}`, JSON.stringify({ size: opts.size, block: opts.block }));
+  } catch {}
 }
 
 // Gleiche Zeilenaufteilung wie auf dem Server (server/pln.js).

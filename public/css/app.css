@@ -1613,12 +1613,12 @@ body.exam-mode .container {
   background: #fff;
   border-radius: var(--radius);
   padding: 2rem 2.25rem;
-  font-size: 12pt;
+  font-size: 13pt;
   line-height: 1.5;
   color: #000;
 }
 .pln-sheet h1 {
-  font-size: 15pt;
+  font-size: 16pt;
   margin: 0 0 0.2rem;
 }
 .pln-meta {
@@ -1638,22 +1638,54 @@ body.exam-mode .container {
   padding: 0 0.35em;
   border: 1.5px solid #000;
   border-radius: 4px;
-  font-size: 0.75em;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.65em;
   font-weight: 800;
   line-height: 1.3;
-  vertical-align: 0.1em;
+  vertical-align: 0.15em;
   white-space: nowrap;
 }
-.pln-plain {
-  font-size: 12pt;
+.pln-sheet-large {
+  font-size: 15pt;
+}
+.mark1-at {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 1.1em;
+  border-left: 2px solid #000;
+  vertical-align: -0.2em;
+}
+.mark1-at span {
+  position: absolute;
+  bottom: 100%;
+  left: -2.2em;
+  padding: 0 3px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: #fff;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 7pt;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.pln-text {
+  --pln-pt: 14pt;
+}
+.pln-plain,
+.pln-lines td.txt {
+  font-family: 'Courier New', 'Liberation Mono', Courier, monospace;
+  font-size: var(--pln-pt);
   line-height: 1.5;
+  white-space: pre;
+}
+.pln-plain {
   margin: 0;
 }
 .pln-lines {
   border-collapse: collapse;
   width: 100%;
-  font-size: 12pt;
-  line-height: 1.5;
 }
 .pln-lines th {
   font-size: 9pt;
@@ -1662,26 +1694,31 @@ body.exam-mode .container {
   border-bottom: 1px solid #999;
 }
 .pln-lines td {
-  padding: 0 0.4rem;
-  vertical-align: top;
+  padding: 0 0.3rem;
+  line-height: calc(var(--pln-pt) * 1.5);
+  vertical-align: baseline;
 }
 .pln-lines td.no {
-  width: 3.5rem;
+  width: 1%;
   text-align: right;
   color: #555;
+  font-size: calc(var(--pln-pt) * 0.72);
   font-variant-numeric: tabular-nums;
 }
-.pln-lines td.txt {
-  white-space: nowrap;
+/* Abstand nach je n Zeilen */
+.pln-plain .pln-gap,
+.pln-lines tr.pln-gap td {
+  padding-bottom: 0.9em;
 }
-
-.pln-sheet-large,
-.pln-sheet-large .pln-plain,
-.pln-sheet-large .pln-lines {
-  font-size: 16pt;
+.pln-wrap .pln-plain,
+.pln-wrap .pln-lines td.txt {
+  white-space: pre-wrap;
 }
-.pln-sheet-large .pln-lines td.txt {
-  white-space: normal;
+.toolbar .pln-fit {
+  flex-basis: 100%;
+}
+.toolbar .pln-fit:empty {
+  display: none;
 }
 
 /* PLN-Einstellungen */
@@ -1909,9 +1946,20 @@ a.button.small,
   white-space: normal;
 }
 .pln-hints {
-  border: 2px solid #888;
-  border-radius: 10px;
-  padding: 0.5rem 0.9rem 0.5rem 1.8rem;
+  /* Kleingedrucktes: bleibt oben, nimmt aber wenig Platz weg */
+  border: 1px solid #888;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem 0.35rem 1.4rem;
+  font-size: 8.5pt;
+  line-height: 1.35;
+  columns: 2;
+  column-gap: 1.6rem;
+}
+.pln-hints li {
+  break-inside: avoid;
+}
+.pln-sheet-large .pln-hints {
+  font-size: 11pt;
 }
 
 /* ---------- Druckliste mit Zugangsdaten ---------- */
@@ -1951,7 +1999,15 @@ a.button.small,
 
 @page {
   size: A4;
-  margin: 12mm;
+  margin: 12mm 10mm;
+}
+/* Vorlage für den Nachteilsausgleich: große Schrift im Querformat */
+@page quer {
+  size: A4 landscape;
+  margin: 12mm 10mm;
+}
+.pln-sheet-large {
+  page: quer;
 }
 
 @media print {
