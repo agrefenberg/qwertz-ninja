@@ -115,7 +115,13 @@ export async function settingsView(app) {
     h('label', 'Name der Schule', h('input', { name: 'schoolName', required: true, maxlength: 120, value: s.schoolName })),
     h('label', 'Schuljahresende (MM-TT)', h('input', { name: 'yearEnd', required: true, pattern: '\\d{2}-\\d{2}', value: s.yearEnd })),
     h('p.muted.small', 'Am Tag danach werden alle Ergebnisse, Aufgaben, Abzeichen und Punkte automatisch gelöscht. Konten und Klassen bleiben bestehen.'),
-    h('label', 'Datenschutzhinweis (wird auf der Anmeldeseite verlinkt)', h('textarea', { name: 'privacyNote', rows: 8, maxlength: 5000 }, s.privacyNote)),
+    s.mode === 'multi'
+      ? h('label', 'Datenschutzhinweis der Schule (sehen die Nutzer nach der Anmeldung unter „Datenschutz“)', h('textarea', { name: 'privacyNote', rows: 8, maxlength: 10000 }, s.privacyNote))
+      : [
+          !s.imprint || !s.privacyNote ? h('p.form-error', 'Für den Betrieb im Internet sind Impressum und Datenschutzhinweis Pflicht. Bitte beides eintragen.') : null,
+          h('label', 'Datenschutzhinweis (wird auf der Anmeldeseite verlinkt)', h('textarea', { name: 'privacyNote', rows: 8, maxlength: 10000 }, s.privacyNote)),
+          h('label', 'Impressum (wird auf der Anmeldeseite verlinkt)', h('textarea', { name: 'imprint', rows: 6, maxlength: 3000, placeholder: 'Name und Anschrift der Schule, Vertretung, Kontakt' }, s.imprint)),
+        ],
     h('button.primary', { type: 'submit' }, 'Speichern')
   );
   const next = h('strong', new Date(s.nextPurge).toLocaleDateString('de-DE'));
@@ -174,9 +180,11 @@ async function demoSection() {
             ),
             info?.sampleStudents?.length ? h('p', 'Beispiel-Schülerkonten: ', info.sampleStudents.map((u, i) => [i ? ', ' : '', h('b.mono', u)])) : null,
             info ? h('p.muted.small', `${info.classes} Klassen, ${info.students} Schülerkonten, ${info.results} Ergebnisse angelegt.`) : null,
-            h('div.toolbar', h('button', { onclick: run('create', 'Demodaten neu angelegt') }, 'Neu erzeugen'), h('button.danger', { onclick: run('remove', 'Demodaten entfernt') }, 'Demodaten entfernen'))
+            h('div.toolbar', demo.allowed ? h('button', { onclick: run('create', 'Demodaten neu angelegt') }, 'Neu erzeugen') : null, h('button.danger', { onclick: run('remove', 'Demodaten entfernt') }, 'Demodaten entfernen'))
           )
-        : h('button.primary', { onclick: run('create', 'Demodaten angelegt') }, 'Demodaten anlegen')
+        : demo.allowed
+          ? h('button.primary', { onclick: run('create', 'Demodaten angelegt') }, 'Demodaten anlegen')
+          : h('p', 'Im Betrieb über das Internet sind Demodaten ausgeschaltet, weil ihr Passwort öffentlich bekannt ist. Zum Ausprobieren eine Installation im lokalen Netz nutzen.')
     );
   };
   render(await get('/api/admin/demo'));

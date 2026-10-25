@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 
-const SESSION_DAYS = 30;
+// Eine Anmeldung gilt höchstens 12 Stunden (auch an geteilten Schulrechnern). Schülerinnen und Schüler
+// bekommen ein Sitzungs-Cookie, das beim Schließen des Browsers verfällt.
+const SESSION_MS = 12 * 3600 * 1000;
 export const COOKIE = 'qn_session';
 
 export function hashPassword(password) {
@@ -41,7 +43,7 @@ export function createSession(db, userId, idToken = null) {
   db.prepare('INSERT INTO sessions (token, user_id, expires_at, id_token) VALUES (?, ?, ?, ?)').run(
     token,
     userId,
-    Date.now() + SESSION_DAYS * 864e5,
+    Date.now() + SESSION_MS,
     idToken
   );
   return token;
@@ -70,9 +72,14 @@ export function sessionUser(db, token) {
   );
 }
 
-export function cookieOptions(secure) {
-  return { httpOnly: true, sameSite: 'strict', secure, maxAge: SESSION_DAYS * 864e5, path: '/' };
+export function cookieOptions(secure, role = null) {
+  const base = { httpOnly: true, sameSite: 'strict', secure, path: '/' };
+  return role === 'student' ? base : { ...base, maxAge: SESSION_MS };
 }
+
+// Für unbekannte Benutzernamen wird gegen diesen Hash geprüft, damit die Antwortzeit nicht verrät,
+// ob es einen Namen gibt.
+export const DUMMY_HASH = hashPassword(crypto.randomBytes(12).toString('base64'));
 
 // Leicht vorlesbare Zugangsdaten ohne verwechselbare Zeichen (kein l/1/I, 0/O).
 const CONS = 'bdfgkmnprstvwz';

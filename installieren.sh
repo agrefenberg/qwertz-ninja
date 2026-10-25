@@ -30,6 +30,15 @@ main() {
 
   if [ -d "$dir/.git" ]; then
     echo "QWERTZ Ninja aktualisieren in $dir"
+    # Vor jedem Update eine Sicherung der Datenbank anlegen (falls die App läuft).
+    if docker compose version >/dev/null 2>&1 && [ -f "$dir/.env" ]; then
+      bash "$dir/sicherung.sh" >/dev/null 2>&1 && echo "Sicherung vor dem Update angelegt (data/sicherung)." || echo "Hinweis: Sicherung vor dem Update nicht möglich, Update läuft trotzdem."
+    fi
+    # Selbst geänderte Dateien (z. B. Caddyfile) nicht stillschweigend überschreiben, sondern beiseitelegen.
+    if [ -n "$(as_owner git -C "$dir" status --porcelain --untracked-files=no)" ]; then
+      as_owner git -C "$dir" stash push --quiet -m "lokale Änderungen vor Update $(date +%Y-%m-%d)"
+      echo "Hinweis: Lokale Änderungen an Programmdateien wurden beiseitegelegt (git stash list in $dir)."
+    fi
     as_owner git -C "$dir" fetch --quiet origin "$BRANCH"
     as_owner git -C "$dir" reset --quiet --hard "origin/$BRANCH"
     if docker compose version >/dev/null 2>&1 && [ -f "$dir/.env" ]; then

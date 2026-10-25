@@ -7,7 +7,7 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 - **Lernende:** geführte Wiederholung der Grundstellung beim ersten Anmelden, Übungen mit Texten, Wortlisten und automatisch erzeugten Schwachstellen-Übungen, Bildschirmtastatur mit Fingerfarben, Fehlermodus wählbar (weitertippen oder korrigieren), Anschläge/min und WPM umschaltbar, Gürtel-Level, Abzeichen, Rangliste (wenn freigegeben).
 - **Kurs:** 16 aufeinander aufbauende Lektionen von der Grundreihe bis zur Abschlussprüfung. Bestanden mit höchstens 3 % Fehlern, dann wird die nächste frei; Sterne für Tempo.
 - **Persönliche Fehleranalyse:** Die App merkt sich schwache Tasten, typische Verwechslungen (z. B. „ä statt ö“) und oft verschriebene Wörter, zeigt sie unter „Fehler“ und erzeugt passende Übungen. Lehrkräfte sehen die Analyse in der Schüleransicht.
-- **Lehrkräfte:** Klassen anlegen, Schülerzugänge als Schneideliste drucken (jederzeit erneut für alle oder ausgewählte Schüler, dabei werden neue Passwörter vergeben), Übungen mit Frist und Tests mit Zeitlimit zuweisen, Notenschlüssel mit Notenvorschlag, PLN (Praktischer Leistungsnachweis, 10-Minuten-Abschrift) nach den Richtlinien mit einstellbaren Bewertungsregeln, Druckvorlage und PDF aller Abschriften, eigene Texte, Ergebnisse pro Klasse, Aufgabe und Schüler, CSV-Export.
+- **Lehrkräfte:** Klassen anlegen, Schülerzugänge als Schneideliste drucken (jederzeit erneut für alle oder ausgewählte Schüler, dabei werden neue Passwörter vergeben), Übungen mit Frist und Tests mit Zeitlimit zuweisen, Notenschlüssel mit Notenvorschlag, PLN (Praktischer Leistungsnachweis, 10-Minuten-Abschrift) nach den Richtlinien mit einstellbaren Bewertungsregeln, Druckvorlage und PDF aller Abschriften, eigene Texte, Ergebnisse pro Klasse, Aufgabe und Schüler, CSV-Export der Ergebnisse und vollständiger Datenexport (JSON) pro Klasse oder pro Schüler.
 - **Admin:** Lehrkräfte anlegen, Passwörter zurücksetzen, Schulname, Schuljahresende, Datenschutzhinweis.
 
 ### Bewertung
@@ -34,7 +34,10 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 ### Datenschutz
 
 - Für Schülerinnen und Schüler werden nur Pseudonym, Benutzername, Passwort-Hash und Ergebnisse gespeichert, keine Namen und keine E-Mail-Adressen.
-- Keine Tracking-Cookies, keine CDNs, keine externen Schriftarten oder Skripte. Nur ein technisch notwendiges Sitzungs-Cookie.
+- Keine Tracking-Cookies, keine CDNs, keine externen Schriftarten oder Skripte. Nur ein technisch notwendiges Sitzungs-Cookie: Bei Schülern endet es mit dem Schließen des Browsers, bei Lehrkräften und Admins nach 12 Stunden. Eine Passwortänderung meldet alle anderen Geräte ab.
+- Impressum und Datenschutzhinweis werden unter Admin › Einstellungen (bzw. beim Betreiber) eingetragen und in der Fußzeile jeder Seite verlinkt. Für den Betrieb im Internet sind beide Pflicht.
+- Auskunft und Archiv: Pro Schüler lässt sich eine Datenauskunft (Art. 15 DSGVO) als JSON herunterladen, pro Klasse ein vollständiger Export aller gespeicherten Daten, etwa vor der Löschung am Schuljahresende.
+- Über VIDIS angemeldete Lehrkräfte wählen selbst einen Anzeigenamen; der Klarname aus VIDIS wird nicht gespeichert.
 - Alle Ergebnisse, Aufgaben, Abzeichen, Punkte, Kursfortschritte und Fehleranalysen werden am Tag nach dem Schuljahresende (Standard: 31. Juli) automatisch gelöscht. Konten und Klassen bleiben bestehen.
 - Die Daten liegen in einer einzigen SQLite-Datei auf dem eigenen Server.
 - Alle mitgelieferten Übungstexte wurden eigens für QWERTZ Ninja geschrieben. Die Schrift Plus Jakarta Sans (SIL Open Font License, `public/fonts`) wird vom eigenen Server ausgeliefert.
@@ -70,7 +73,9 @@ Alternativ mit der Zip-Datei:
 
 Das Skript aktualisiert das System, schaltet automatische Sicherheitsupdates ein, installiert Docker, startet die App zuerst nur im lokalen Netz und wartet, bis der Admin angelegt ist. Erst danach stellt es auf HTTPS um (Caddy holt das Zertifikat automatisch und schreibt keine Zugriffsprotokolle mit IP-Adressen). Zum Schluss richtet es die nächtliche Sicherung ein und sagt, welche Ports (80 und 443) am Router freizugeben sind. Das Skript kann jederzeit erneut laufen, z. B. um HTTPS später einzuschalten.
 
-Ohne Skript geht es auch von Hand: `QN_DOMAIN=ninja.example.de docker compose -f docker-compose.https.yml up -d --build`. Wichtig: den Admin anlegen, bevor die Ports freigegeben werden.
+Ohne Skript geht es auch von Hand: `QN_DOMAIN=ninja.example.de docker compose -f docker-compose.https.yml up -d --build`. Wichtig: den Admin anlegen, bevor die Ports freigegeben werden. Wer die Ports schon vorher freigibt, setzt in `.env` einen Einrichtungs-Code `QN_SETUP_TOKEN=…`; der erste Admin lässt sich dann nur mit diesem Code anlegen.
+
+Anmeldungen sind gegen Durchprobieren geschützt: nach 5 Fehlversuchen ist der Benutzername eine Minute gesperrt, nach 30 Fehlversuchen von einer Adresse ist diese 15 Minuten gesperrt. Hinter Caddy sieht die App die echte Adresse des Geräts (`TRUST_PROXY=1` in `docker-compose.https.yml`; hinter einem anderen Proxy entsprechend anpassen). Die Adressen werden nur im Arbeitsspeicher gehalten und nach höchstens 15 Minuten vergessen. Der Container meldet über einen Healthcheck, ob die App antwortet (`docker ps` zeigt `healthy`), und die Protokolle sind auf wenige Megabyte begrenzt.
 
 ### Ohne Docker
 
@@ -79,7 +84,7 @@ npm ci --omit=dev
 npm start
 ```
 
-Umgebungsvariablen: `PORT` (Standard 3000), `DB_FILE` (Standard `./data/qwertz-ninja.sqlite`), `SECURE_COOKIES=1` hinter HTTPS.
+Umgebungsvariablen: `PORT` (Standard 3000), `DB_FILE` (Standard `./data/qwertz-ninja.sqlite`), `SECURE_COOKIES=1` hinter HTTPS, `TRUST_PROXY` (Anzahl der Proxys vor der App, Standard nur `loopback`), `QN_SETUP_TOKEN` (Einrichtungs-Code für den ersten Admin), `QN_ALLOW_DEMO=1` (Demodaten trotz HTTPS erlauben).
 
 ### Aktualisieren
 
@@ -95,11 +100,13 @@ sudo ./start.sh
 
 ### Demodaten
 
-Unter Admin › Einstellungen lassen sich Demodaten anlegen und wieder entfernen: vier Demo-Lehrkräfte (`demo-huber`, `demo-maier`, `demo-yilmaz`, `demo-schmid`), sieben Klassen, rund 170 Schülerkonten mit mehreren Wochen Ergebnissen. Passwort für alle Demo-Konten: `ninja-demo`. Echte Konten bleiben unberührt.
+Unter Admin › Einstellungen lassen sich Demodaten anlegen und wieder entfernen: vier Demo-Lehrkräfte (`demo-huber`, `demo-maier`, `demo-yilmaz`, `demo-schmid`), sieben Klassen, rund 170 Schülerkonten mit mehreren Wochen Ergebnissen. Passwort für alle Demo-Konten: `ninja-demo`. Echte Konten bleiben unberührt. Weil das Passwort öffentlich ist, sind Demodaten im Betrieb mit HTTPS ausgeschaltet; wer sie dort trotzdem braucht, setzt `QN_ALLOW_DEMO=1` in `.env`.
 
 ### Sicherung
 
-Es genügt, den Ordner `data` zu sichern. `./sicherung.sh` legt im laufenden Betrieb eine konsistente Kopie in `data/sicherung` an (die letzten 14 bleiben) und kopiert sie zusätzlich in `QN_BACKUP_DIR` aus `.env`, z. B. auf einen USB-Stick. Das Einrichtungsskript startet die Sicherung jede Nacht um 2:30 Uhr. Wiederherstellen: App stoppen, die gewünschte Sicherung als `data/qwertz-ninja.sqlite` zurückkopieren (vorhandene `-wal`- und `-shm`-Dateien daneben löschen), wieder starten.
+Es genügt, den Ordner `data` zu sichern. `./sicherung.sh` legt im laufenden Betrieb eine konsistente Kopie in `data/sicherung` an (die letzten 14 bleiben) und kopiert sie zusätzlich in `QN_BACKUP_DIR` aus `.env`, z. B. auf einen USB-Stick. Das Einrichtungsskript startet die Sicherung jede Nacht um 2:30 Uhr. Steht in `.env` zusätzlich `QN_BACKUP_PASSWORD=…`, wird die externe Kopie verschlüsselt (AES-256, Endung `.enc`); dort bleiben die letzten 30. Das Passwort unbedingt getrennt aufbewahren, ohne es lässt sich die Sicherung nicht mehr öffnen. Vor jedem Update über `installieren.sh` wird automatisch eine Sicherung angelegt.
+
+Wiederherstellen: `sudo ./wiederherstellen.sh data/sicherung/<datei>.sqlite` (oder eine `.enc`-Datei). Das Skript prüft die Datei, stoppt die App, bewahrt die bisherige Datenbank als `data/qwertz-ninja.sqlite.vor-wiederherstellung-<zeit>` auf, spielt die Sicherung ein und startet die App wieder.
 
 ### Passwort vergessen
 

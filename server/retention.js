@@ -6,6 +6,9 @@ function purgeMoment(yearEnd, year) {
   return new Date(year, mm - 1, dd + 1, 0, 0, 0);
 }
 
+// Datum als JJJJ-MM-TT in der Zeitzone des Servers (toISOString würde nach UTC verschieben).
+export const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 export function nextPurgeDate(school, now = new Date()) {
   const thisYear = purgeMoment(school?.year_end, now.getFullYear());
   return thisYear > now ? thisYear : purgeMoment(school?.year_end, now.getFullYear() + 1);

@@ -280,6 +280,11 @@ export async function operatorSettingsView(app) {
     ),
     h('p.muted.small', 'Wird im AVV so eingesetzt: „Die Verarbeitung erfolgt …“.'),
     h('label', 'Unterauftragsverarbeiter', h('textarea', { name: 'subprocessors', rows: 3, maxlength: 1000, placeholder: 'Leer lassen, wenn es keine gibt (eigene Hardware).' }, op.subprocessors)),
+    h('h2', 'Impressum und Datenschutz'),
+    h('p.muted.small', 'Beides wird auf der Anmeldeseite verlinkt und ist für den Betrieb im Internet Pflicht. Die Schulen ergänzen ihren eigenen Datenschutzhinweis in ihren Einstellungen; ihn sehen die Nutzer nach der Anmeldung.'),
+    !op.imprint ? h('p.form-error', 'Es ist noch kein Impressum hinterlegt.') : null,
+    h('label', 'Impressum', h('textarea', { name: 'imprint', rows: 6, maxlength: 3000, placeholder: 'Name, Anschrift, Kontakt, Verantwortlicher nach § 18 MStV' }, op.imprint)),
+    h('label', 'Datenschutzerklärung des Angebots', h('textarea', { name: 'privacy', rows: 8, maxlength: 10000 }, op.privacy)),
     h('button.primary', { type: 'submit' }, 'Speichern')
   );
   const vidis = h(
@@ -287,7 +292,7 @@ export async function operatorSettingsView(app) {
     h('h2', 'Anmeldung über VIDIS'),
     o.vidis.configured
       ? [
-          h('p', h('span.tag.tag-ok', 'Eingerichtet'), ' Verbunden mit ', h('span.mono', o.vidis.issuer), '.'),
+          h('p', h('span.tag.tag-ok', 'Eingerichtet'), ' Konfiguriert für ', h('span.mono', o.vidis.issuer), '. Ob die Verbindung klappt, zeigt die erste Anmeldung.'),
           h('p.muted.small', 'Rückleitungsadresse (Redirect-URI) für die FWU: ', h('b.mono', o.vidis.redirectUri)),
         ]
       : [

@@ -12,7 +12,11 @@ const OPERATOR_FIELDS = {
   dpo: 'operator_dpo',
   location: 'operator_location',
   subprocessors: 'operator_subprocessors',
+  // Pflichtangaben für den Betrieb im Internet, auf der Anmeldeseite verlinkt
+  imprint: 'operator_imprint',
+  privacy: 'operator_privacy',
 };
+const FIELD_MAX = { imprint: 3000, privacy: 10000 };
 
 export function operatorInfo(db) {
   return Object.fromEntries(Object.entries(OPERATOR_FIELDS).map(([k, key]) => [k, getSetting(db, key, '')]));
@@ -79,7 +83,7 @@ export function operatorRoutes(app, db, { auth, bad, notFound, str, int, tx, sch
     const b = req.body;
     setSetting(db, 'operator_name', str(b.name, { max: 120, name: 'Name des Angebots' }));
     for (const [k, key] of Object.entries(OPERATOR_FIELDS)) {
-      if (k !== 'name') setSetting(db, key, typeof b[k] === 'string' ? b[k].trim().slice(0, 1000) : '');
+      if (k !== 'name') setSetting(db, key, typeof b[k] === 'string' ? b[k].trim().slice(0, FIELD_MAX[k] || 1000) : '');
     }
     res.json(operatorInfo(db));
   });

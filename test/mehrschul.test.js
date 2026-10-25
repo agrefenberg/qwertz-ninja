@@ -195,7 +195,10 @@ test('Mehrere Schulen: Betreiber, AVV, Trennung der Schulen, VIDIS', async () =>
   await vidisLogin(lehr, { sub: 'lehr-1', rolle: 'LEHR', schulkennung: ['DE-BY-1111'], vorname: 'Anna', nachname: 'Schmidt' });
   const meL = (await lehr.get('/api/me')).data;
   assert.equal(meL.role, 'teacher');
-  assert.equal(meL.displayName, 'Anna Schmidt');
+  assert.equal(meL.displayName, 'Lehrkraft', 'Klarnamen aus VIDIS werden nicht gespeichert');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM users WHERE display_name LIKE '%Schmidt%'").get().n, 0);
+  assert.equal((await lehr.put('/api/me/display-name', { displayName: 'Frau S.' })).status, 200);
+  assert.equal((await lehr.get('/api/me')).data.displayName, 'Frau S.');
 
   // Abgelehnt: unbekannte Schule, Schule ohne AVV, Eltern
   assert.equal((await vidisLogin(client(), { sub: 'x1', rolle: 'LERN', schulkennung: ['DE-BY-9999'] })).location, '/?vidis=schule');

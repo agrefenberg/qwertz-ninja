@@ -41,8 +41,7 @@ export function loginView(app) {
       : null,
     h(
       'p.muted.small',
-      state.setup?.vidis ? 'Über VIDIS meldest du dich mit dem Konto deiner Schule an. Sonst bekommst du deine Zugangsdaten von deiner Lehrkraft. ' : 'Deine Zugangsdaten bekommst du von deiner Lehrkraft. ',
-      h('a', { href: '#/datenschutz' }, 'Datenschutz')
+      state.setup?.vidis ? 'Über VIDIS meldest du dich mit dem Konto deiner Schule an. Sonst bekommst du deine Zugangsdaten von deiner Lehrkraft.' : 'Deine Zugangsdaten bekommst du von deiner Lehrkraft.'
     )
   );
   app.replaceChildren(form);
@@ -78,6 +77,7 @@ export function setupView(app) {
       h('label', h('input', { type: 'radio', name: 'mode', value: 'multi', onchange: () => setMode('multi') }), h('span', h('b', 'Für mehrere Schulen'), 'Du betreibst QWERTZ Ninja als Angebot für mehrere Schulen, legst sie an und schließt mit jeder einen AVV ab.'))
     ),
     h('label', nameLabel, h('input', { name: 'schoolName', required: true, maxlength: 120 })),
+    state.setup?.setupToken ? h('label', 'Einrichtungs-Code (steht in der Datei .env als QN_SETUP_TOKEN)', h('input', { name: 'setupToken', required: true, autocomplete: 'off' })) : null,
     h('label', 'Benutzername (Admin)', h('input', { name: 'username', required: true, minlength: 3, maxlength: 40, autocapitalize: 'off' })),
     h('label', 'Passwort (mindestens 10 Zeichen)', passwordInput({ name: 'password', required: true, minlength: 10, autocomplete: 'new-password' })),
     h('label', 'Passwort wiederholen', passwordInput({ name: 'password2', required: true, minlength: 10, autocomplete: 'new-password' })),
@@ -90,14 +90,31 @@ function setMode(mode) {
   nameLabel.textContent = mode === 'multi' ? 'Name des Angebots (z. B. „QWERTZ Ninja für Schulen“)' : 'Name der Schule';
 }
 
+export function imprintView(app) {
+  const text = state.setup?.imprint;
+  app.replaceChildren(
+    h(
+      'article.card',
+      h('h1', 'Impressum'),
+      text ? h('div.prewrap', text) : h('p.muted', 'Es ist noch kein Impressum hinterlegt.'),
+      h('p', h('a', { href: '#/' }, 'Zurück'))
+    )
+  );
+}
+
 export function privacyView(app) {
   const note = state.setup?.privacyNote;
+  const schoolNote = state.me?.schoolPrivacyNote;
   app.replaceChildren(
     h(
       'article.card',
       h('h1', 'Datenschutz'),
       state.setup?.mode === 'multi'
-        ? h('p', 'Verantwortlich für deine Daten ist deine Schule. QWERTZ Ninja verarbeitet sie in ihrem Auftrag auf Grundlage eines Vertrags zur Auftragsverarbeitung. Fragen zum Datenschutz beantwortet deine Schule.')
+        ? [
+            h('p', 'Verantwortlich für deine Daten ist deine Schule. QWERTZ Ninja verarbeitet sie in ihrem Auftrag auf Grundlage eines Vertrags zur Auftragsverarbeitung. Fragen zum Datenschutz beantwortet deine Schule.'),
+            schoolNote ? [h('h2', 'Hinweis deiner Schule'), h('div.prewrap', schoolNote)] : null,
+            note ? [h('h2', 'Datenschutzerklärung des Angebots'), h('div.prewrap', note)] : null,
+          ]
         : note
           ? h('div.prewrap', note)
           : h('p.muted', 'Die Schule hat noch keinen Datenschutzhinweis hinterlegt.'),
@@ -105,8 +122,9 @@ export function privacyView(app) {
       h(
         'ul',
         h('li', 'Für Schülerinnen und Schüler nur ein Pseudonym, einen Benutzernamen und das verschlüsselte Passwort. Keine Namen, keine E-Mail-Adressen.'),
-        state.setup?.vidis ? h('li', 'Bei Anmeldung über VIDIS: eine pseudonyme Kennung, die Rolle und die Schulkennung, bei Lehrkräften gegebenenfalls der Name.') : null,
+        state.setup?.vidis ? h('li', 'Bei Anmeldung über VIDIS: eine pseudonyme Kennung, die Rolle und die Schulkennung. Namen werden nicht gespeichert.') : null,
         h('li', 'Übungs- und Testergebnisse (Anschläge, Fehler, Dauer) sowie Trefferquoten pro Taste.'),
+        h('li', 'Bei praktischen Leistungsnachweisen (PLN) die Abschrift und, falls die Lehrkraft es einträgt, dass ein Nachteilsausgleich gilt (z. B. wegen LRS). Einen Grund oder eine Diagnose speichert QWERTZ Ninja nicht.'),
         h('li', 'Ein technisch notwendiges Anmelde-Cookie. Keine Tracking-Cookies, keine externen Dienste, keine Schriftarten oder Skripte von Dritten.'),
         h('li', 'Alle Ergebnisse werden automatisch zum Schuljahresende gelöscht.')
       ),

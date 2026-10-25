@@ -14,10 +14,11 @@ import {
   sessionUser,
   slugify,
   verifyPasswordAsync,
+  DUMMY_HASH,
 } from './auth.js';
 import { BADGES, levelFor, newBadges } from './gamify.js';
 import { compareTyped, metrics, normalizeChar, normalizeText, suggestGrade } from '../public/js/scoring.js';
-import { nextPurgeDate } from './retention.js';
+import { nextPurgeDate, ymd } from './retention.js';
 import { operatorRoutes } from './operator.js';
 import { vidisRoutes, vidisConfigured } from './vidis.js';
 import { createDemo, hasDemo, removeDemo, prefixFor, DEMO_PASSWORD } from './demo.js';
@@ -45,7 +46,12 @@ function parseCookies(header = '') {
   const out = {};
   for (const part of header.split(';')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i <= 0) continue;
+    try {
+      out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    } catch {
+      // Kaputtes Cookie: ignorieren statt mit Fehler 500 abzubrechen.
+    }
   }
   return out;
 }
@@ -64,10 +70,11 @@ function int(v, { min = 0, max = 1e9, name = 'Wert' } = {}) {
   return n;
 }
 
-export function createApp(db, { secureCookies = false, vidis = null } = {}) {
+export function createApp(db, { secureCookies = false, vidis = null, trustProxy = 'loopback', setupToken = '', allowDemo = !secureCookies } = {}) {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 'loopback');
+  // Hinter Caddy (eigener Container) ist der Proxy ein Hop entfernt: Dann liefert req.ip die echte Adresse.
+  app.set('trust proxy', trustProxy);
 
   app.use((req, res, next) => {
     res.set({
@@ -83,10 +90,11 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
   app.use(express.static(PUBLIC_DIR, { index: 'index.html', maxAge: 0 }));
   app.use('/api', express.json({ limit: '200kb' }));
 
-  // Nur JSON-Anfragen für schreibende Zugriffe: zusammen mit SameSite=Strict schützt das vor CSRF.
+  // Nur JSON-Anfragen für schreibende Zugriffe (auch ohne Inhalt): Ein fremdes Formular kann diesen Typ nicht
+  // senden. Zusammen mit SameSite=Strict schützt das vor CSRF.
   app.use('/api', (req, res, next) => {
-    const hasBody = Number(req.headers['content-length'] || 0) > 0 || req.headers['transfer-encoding'];
-    if (!['GET', 'HEAD', 'DELETE'].includes(req.method) && !req.is('application/json') && hasBody) {
+    req.body ??= {};
+    if (!['GET', 'HEAD', 'DELETE'].includes(req.method) && !req.is('application/json')) {
       return next(new HttpError(415, 'Nur JSON wird akzeptiert.'));
     }
     req.user = sessionUser(db, parseCookies(req.headers.cookie)[COOKIE]);
@@ -124,13 +132,17 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       needsSetup: admins === 0,
       mode: isMulti(db) ? 'multi' : 'single',
       schoolName: isMulti(db) ? brandName() : single?.name || 'QWERTZ Ninja',
-      privacyNote: single?.privacy_note || '',
+      privacyNote: isMulti(db) ? getSetting(db, 'operator_privacy', '') : single?.privacy_note || '',
+      imprint: isMulti(db) ? getSetting(db, 'operator_imprint', '') : single?.imprint || '',
       vidis: vidisConfigured(vidis) && isMulti(db),
+      setupToken: admins === 0 && !!setupToken,
     });
   });
 
   app.post('/api/setup', (req, res) => {
     if (db.prepare("SELECT 1 FROM users WHERE role = 'admin'").get()) throw forbidden();
+    // Optional: Einrichtungs-Code aus .env, damit bei einer frisch freigegebenen Instanz niemand zuvorkommt.
+    if (setupToken && req.body.setupToken !== setupToken) throw new HttpError(403, 'Der Einrichtungs-Code stimmt nicht. Er steht in der Datei .env (QN_SETUP_TOKEN).');
     const username = str(req.body.username, { max: 40, min: 3, name: 'Benutzername' });
     const password = str(req.body.password, { max: 200, min: 10, name: 'Passwort' });
     const multi = req.body.mode === 'multi';
@@ -155,16 +167,34 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     res.json({ ok: true });
   });
 
+  // Anmeldeversuche begrenzen: je Adresse und Benutzername 5 Fehlversuche pro Minute, je Adresse insgesamt
+  // 30 Fehlversuche in 15 Minuten. Die Einträge werden nach 15 Minuten vergessen.
   const loginAttempts = new Map();
+  const ipAttempts = new Map();
+  const ATTEMPT_WINDOW = 15 * 60 * 1000;
+  setInterval(() => {
+    const now = Date.now();
+    for (const m of [loginAttempts, ipAttempts]) for (const [k, a] of m) if (now - a.last > ATTEMPT_WINDOW && a.until < now) m.delete(k);
+  }, 60000).unref();
   app.post('/api/login', async (req, res) => {
+    const now = Date.now();
     const key = `${req.ip}|${String(req.body.username).toLowerCase()}`;
-    const a = loginAttempts.get(key) || { n: 0, until: 0 };
-    if (a.until > Date.now()) throw new HttpError(429, 'Zu viele Versuche. Bitte eine Minute warten.');
+    const a = loginAttempts.get(key) || { n: 0, until: 0, last: now };
+    const ipa = ipAttempts.get(req.ip) || { n: 0, until: 0, last: now };
+    if (a.until > now || ipa.until > now) throw new HttpError(429, 'Zu viele Versuche. Bitte eine Minute warten.');
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(String(req.body.username || '').trim());
-    if (!user || !(await verifyPasswordAsync(String(req.body.password || ''), user.password_hash))) {
+    // Auch ohne Konto wird ein Hash geprüft, damit die Antwortzeit nicht verrät, ob es den Namen gibt.
+    const valid = await verifyPasswordAsync(String(req.body.password || ''), user?.password_hash || DUMMY_HASH);
+    if (!user || !valid) {
       a.n++;
-      if (a.n >= 5) Object.assign(a, { n: 0, until: Date.now() + 60000 });
+      a.last = now;
+      if (a.n >= 5) Object.assign(a, { n: 0, until: now + 60000 });
       loginAttempts.set(key, a);
+      if (now - ipa.last > ATTEMPT_WINDOW) ipa.n = 0;
+      ipa.n++;
+      ipa.last = now;
+      if (ipa.n >= 30) Object.assign(ipa, { n: 0, until: now + ATTEMPT_WINDOW });
+      ipAttempts.set(req.ip, ipa);
       throw new HttpError(401, 'Benutzername oder Passwort ist falsch.');
     }
     loginAttempts.delete(key);
@@ -172,7 +202,7 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       throw new HttpError(403, 'Deine Schule ist noch nicht freigeschaltet. Bitte wende dich an die Schulleitung.');
     }
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
-    res.cookie(COOKIE, createSession(db, user.id), cookieOptions(secureCookies));
+    res.cookie(COOKIE, createSession(db, user.id), cookieOptions(secureCookies, user.role));
     res.json({ ok: true });
   });
 
@@ -193,6 +223,8 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     const next = str(req.body.next, { min: 10, name: 'Neues Passwort' });
     const hash = await hashPasswordAsync(next);
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
+    // Andere Geräte werden abgemeldet, dieses bleibt angemeldet.
+    db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(req.user.id, parseCookies(req.headers.cookie)[COOKIE] || '');
     res.json({ ok: true });
   });
 
@@ -243,14 +275,23 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       allBadges: Object.entries(BADGES).map(([id, b]) => ({ id, ...b })),
       class: cls && { id: cls.id, name: cls.name, leaderboard: !!cls.leaderboard_enabled },
       schoolName: school ? school.name : brandName(),
-      purgeDate: school ? nextPurgeDate(school).toISOString().slice(0, 10) : null,
+      purgeDate: school ? ymd(nextPurgeDate(school)) : null,
       mode: isMulti(db) ? 'multi' : 'single',
       schoolActive: school ? schoolActive(school) : true,
       vidis: !!u.external_id,
+      // Im Mehrschulbetrieb ist die Schule verantwortlich: ihr Hinweis erscheint nach der Anmeldung unter „Datenschutz“.
+      schoolPrivacyNote: isMulti(db) && school ? school.privacy_note : '',
       preview: u.preview
         ? { ...u.preview, classes: db.prepare('SELECT id, name FROM classes WHERE teacher_id = ? ORDER BY name').all(u.id) }
         : null,
     });
+  });
+
+  // Lehrkräfte wählen ihren Anzeigenamen selbst (bei VIDIS wird der echte Name nicht übernommen).
+  app.put('/api/me/display-name', auth('teacher'), (req, res) => {
+    const displayName = str(req.body.displayName, { max: 80, name: 'Anzeigename' });
+    db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(displayName, req.user.id);
+    res.json({ ok: true });
   });
 
   app.patch('/api/me/prefs', auth(), (req, res) => {
@@ -1008,6 +1049,48 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     res.send('﻿' + lines.join('\r\n'));
   });
 
+  // Vollständiger Export (Art. 15/20 DSGVO): alle gespeicherten Daten einer Person bzw. einer ganzen Klasse.
+  // Passwort-Hashes und Sitzungen gehören nicht dazu.
+  function studentData(u) {
+    const all = (sql) => db.prepare(sql).all(u.id);
+    return {
+      pseudonym: u.display_name,
+      benutzername: u.username,
+      angelegt: u.created_at ? new Date(u.created_at).toISOString() : null,
+      ergebnisse: all('SELECT r.*, a.title AS aufgabe FROM results r LEFT JOIN assignments a ON a.id = r.assignment_id WHERE r.user_id = ? ORDER BY r.created_at'),
+      testversuche: all('SELECT t.*, a.title AS aufgabe FROM test_attempts t JOIN assignments a ON a.id = t.assignment_id WHERE t.user_id = ?'),
+      plnVersuche: all('SELECT p.*, l.title AS pln FROM pln_attempts p JOIN plns l ON l.id = p.pln_id WHERE p.user_id = ?'),
+      plnMerkmale: all('SELECT f.*, l.title AS pln FROM pln_flags f JOIN plns l ON l.id = f.pln_id WHERE f.user_id = ?'),
+      kurs: all('SELECT * FROM course_progress WHERE user_id = ?'),
+      kursFreischaltungen: all('SELECT * FROM course_unlocks WHERE user_id = ?'),
+      tasten: all('SELECT * FROM key_stats WHERE user_id = ?'),
+      verwechslungen: all('SELECT * FROM error_pairs WHERE user_id = ?'),
+      fehlerwoerter: all('SELECT * FROM error_words WHERE user_id = ?'),
+      abzeichen: all('SELECT * FROM badges WHERE user_id = ?'),
+    };
+  }
+
+  function sendJson(res, name, data) {
+    res.set('Content-Disposition', `attachment; filename="${name}.json"`);
+    res.type('application/json').send(JSON.stringify({ exportiert: new Date().toISOString(), ...data }, null, 2));
+  }
+
+  app.get('/api/classes/:id/export.json', auth('teacher'), (req, res) => {
+    const cls = ownClass(req);
+    const students = db.prepare("SELECT * FROM users WHERE class_id = ? AND role = 'student' ORDER BY display_name").all(cls.id);
+    sendJson(res, `klasse-${slugify(cls.name)}`, {
+      klasse: cls.name,
+      aufgaben: db.prepare('SELECT * FROM assignments WHERE class_id = ? ORDER BY created_at').all(cls.id),
+      plns: db.prepare('SELECT id, title, text, format, return_rule, settings, status, created_at FROM plns WHERE class_id = ? ORDER BY created_at').all(cls.id),
+      schueler: students.map(studentData),
+    });
+  });
+
+  app.get('/api/students/:id/export.json', auth('teacher'), (req, res) => {
+    const s = ownStudent(req);
+    sendJson(res, `daten-${slugify(s.username)}`, studentData(s));
+  });
+
   // ---------- Admin ----------
 
   app.get('/api/admin/teachers', auth('admin'), (req, res) => {
@@ -1063,7 +1146,8 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       schoolName: school.name,
       yearEnd: school.year_end,
       privacyNote: school.privacy_note,
-      nextPurge: nextPurgeDate(school).toISOString().slice(0, 10),
+      imprint: school.imprint,
+      nextPurge: ymd(nextPurgeDate(school)),
       mode: isMulti(db) ? 'multi' : 'single',
       avvSignedAt: school.avv_signed_at,
       schoolCode: school.school_code,
@@ -1077,13 +1161,15 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     // Februar nur bis 28, damit das Datum in jedem Jahr existiert.
     const maxDay = m ? [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][+m[1] - 1] : 0;
     if (!m || !maxDay || +m[2] < 1 || +m[2] > maxDay) throw bad('Schuljahresende bitte als gültiges Datum MM-TT angeben, z. B. 07-31.');
-    const privacyNote = typeof req.body.privacyNote === 'string' ? req.body.privacyNote.slice(0, 5000) : '';
-    db.prepare('UPDATE schools SET name = ?, year_end = ?, privacy_note = ? WHERE id = ?').run(schoolName, yearEnd, privacyNote, req.user.school_id);
-    res.json({ ok: true, nextPurge: nextPurgeDate(schoolById(req.user.school_id)).toISOString().slice(0, 10) });
+    const privacyNote = typeof req.body.privacyNote === 'string' ? req.body.privacyNote.slice(0, 10000) : '';
+    const imprint = typeof req.body.imprint === 'string' ? req.body.imprint.slice(0, 3000) : '';
+    db.prepare('UPDATE schools SET name = ?, year_end = ?, privacy_note = ?, imprint = ? WHERE id = ?').run(schoolName, yearEnd, privacyNote, imprint, req.user.school_id);
+    res.json({ ok: true, nextPurge: ymd(nextPurgeDate(schoolById(req.user.school_id))) });
   });
 
+  // Demodaten haben ein öffentlich bekanntes Passwort: im Internetbetrieb (HTTPS) nur mit QN_ALLOW_DEMO=1.
   app.get('/api/admin/demo', auth('admin'), (req, res) => {
-    res.json({ present: hasDemo(db, req.user.school_id), password: DEMO_PASSWORD, prefix: prefixFor(req.user.school_id) });
+    res.json({ present: hasDemo(db, req.user.school_id), password: DEMO_PASSWORD, prefix: prefixFor(req.user.school_id), allowed: allowDemo });
   });
 
   app.post('/api/admin/demo', auth('admin'), (req, res) => {
@@ -1092,6 +1178,7 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       return res.json({ present: false });
     }
     if (req.body.action !== 'create') throw bad('Unbekannte Aktion.');
+    if (!allowDemo) throw bad('Demodaten sind im Internetbetrieb ausgeschaltet, weil ihr Passwort öffentlich bekannt ist.');
     res.json({ present: true, ...createDemo(db, req.user.school_id) });
   });
 
