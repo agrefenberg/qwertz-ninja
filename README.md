@@ -101,6 +101,16 @@ Unter Admin › Einstellungen lassen sich Demodaten anlegen und wieder entfernen
 
 Es genügt, den Ordner `data` zu sichern. `./sicherung.sh` legt im laufenden Betrieb eine konsistente Kopie in `data/sicherung` an (die letzten 14 bleiben) und kopiert sie zusätzlich in `QN_BACKUP_DIR` aus `.env`, z. B. auf einen USB-Stick. Das Einrichtungsskript startet die Sicherung jede Nacht um 2:30 Uhr. Wiederherstellen: App stoppen, die gewünschte Sicherung als `data/qwertz-ninja.sqlite` zurückkopieren (vorhandene `-wal`- und `-shm`-Dateien daneben löschen), wieder starten.
 
+### Passwort vergessen
+
+Hat ein Admin oder eine Lehrkraft das Passwort vergessen, setzt man es im Ordner der App neu:
+
+```sh
+sudo ./passwort-zuruecksetzen.sh GRE
+```
+
+Auf dem Mac ohne `sudo`. Das Skript fragt nach dem neuen Passwort. Bleibt die Eingabe leer, wird ein Passwort erzeugt und angezeigt. Alle bestehenden Anmeldungen des Kontos werden dabei beendet. Ohne Benutzernamen zeigt das Skript alle Lehrkraft- und Admin-Konten an. Die App muss dafür laufen.
+
 ### Mehrere Schulen (Betreiber)
 
 Bei der Einrichtung lässt sich statt „Für eine Schule“ auch „Für mehrere Schulen“ wählen. Dann ist das erste Konto der Betreiber. Er trägt unter „Einstellungen“ seine Angaben ein (sie stehen im AVV) und legt unter „Schulen“ jede Schule mit einem Admin-Konto an. Jede Schule hat eigene Lehrkräfte, Klassen, Texte, Einstellungen und ein eigenes Schuljahresende; die Schulen sehen nichts voneinander. Der Betreiber sieht keine Ergebnisse.

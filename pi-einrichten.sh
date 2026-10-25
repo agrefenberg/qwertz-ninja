@@ -123,7 +123,7 @@ chown "$OWNER": .env 2>/dev/null || true
 
 # ---------------------------------------------------------------- Sicherung
 say "Nächtliche Sicherung einrichten (2:30 Uhr)"
-chmod +x start.sh sicherung.sh pi-einrichten.sh
+chmod +x start.sh sicherung.sh passwort-zuruecksetzen.sh pi-einrichten.sh
 cat > /etc/cron.d/qwertz-ninja <<EOF
 # QWERTZ Ninja: nächtliche Sicherung der Datenbank
 30 2 * * * root $APP_DIR/sicherung.sh >> /var/log/qwertz-ninja-sicherung.log 2>&1
