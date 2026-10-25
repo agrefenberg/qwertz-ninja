@@ -1,4 +1,4 @@
-import { append, del, errorBox, formData, get, h, post, put, toast } from '../ui.js';
+import { append, del, errorBox, formData, get, h, post, put, swapView, toast } from '../ui.js';
 import { state } from '../app.js';
 
 function credentialBox(title, { username, password }) {
@@ -13,10 +13,7 @@ function credentialBox(title, { username, password }) {
 
 export async function teachersView(app) {
   const teachers = await get('/api/admin/teachers');
-  const reload = (keep) => {
-    app.replaceChildren();
-    teachersView(app).then(() => keep && app.prepend(keep));
-  };
+  const reload = (keep) => swapView(app, (c) => teachersView(c), keep);
   const form = h(
     'form',
     {
@@ -45,7 +42,7 @@ export async function teachersView(app) {
       ? h('p.notice', 'Eure Schule ist noch nicht freigeschaltet. Lehrkräfte und Schüler können sich erst anmelden, wenn der unterschriebene AVV beim Betreiber vorliegt. ', h('a', { href: '#/einstellungen' }, 'Zum AVV'))
       : null,
     teachers.length
-      ? h(
+      ? h('div.table-wrap', h(
           'table.table',
           h('thead', h('tr', h('th', 'Name'), h('th', 'Benutzername'), h('th', 'Klassen'), h('th', ''))),
           h(
@@ -87,7 +84,7 @@ export async function teachersView(app) {
               )
             )
           )
-        )
+        ))
       : h('p.muted', 'Noch keine Lehrkräfte angelegt.'),
     h('section.card', form)
   );

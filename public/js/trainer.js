@@ -39,7 +39,7 @@ export class Trainer {
       </div>
       <div class="trainer-text" tabindex="-1"></div>
       <textarea class="trainer-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Eingabe"></textarea>
-      <div class="trainer-overlay">Hier klicken und lostippen</div>`;
+      <div class="trainer-overlay">Hier klicken und lostippen<span class="trainer-overlay-hint">Mit Esc kommst du aus dem Text heraus, z. B. um mit Tab zu den Knöpfen zu wechseln.</span></div>`;
     this.textEl = this.el.querySelector('.trainer-text');
     this.input = this.el.querySelector('.trainer-input');
     this.overlay = this.el.querySelector('.trainer-overlay');
@@ -66,6 +66,8 @@ export class Trainer {
     this.input.addEventListener('beforeinput', (e) => this.onBeforeInput(e));
     this.input.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' || e.key === 'Enter') e.preventDefault();
+      // Esc gibt den Fokus frei, damit man mit der Tastatur (Tab) wieder zu Menü und Knöpfen kommt.
+      if (e.key === 'Escape') this.textEl.focus({ preventScroll: true });
     });
     this.input.addEventListener('paste', (e) => e.preventDefault());
     this.input.addEventListener('drop', (e) => e.preventDefault());
@@ -75,7 +77,12 @@ export class Trainer {
   }
 
   focus() {
-    if (!this.finished) this.input.focus({ preventScroll: true });
+    if (this.finished) return;
+    this.input.focus({ preventScroll: true });
+    // Auf niedrigen Bildschirmen (Laptop, iPad quer) den Übungsbereich ganz nach oben holen,
+    // damit Text und Bildschirmtastatur gleichzeitig zu sehen sind.
+    const r = this.el.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > window.innerHeight) this.el.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
 
   get cursor() {

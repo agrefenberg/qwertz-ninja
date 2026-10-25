@@ -1,5 +1,5 @@
 // Betreiber im Mehrschulbetrieb: Schulen anlegen, AVV verwalten, Admin-Konten der Schulen.
-import { append, del, errorBox, fmtDate, formData, get, h, post, put, toast } from '../ui.js';
+import { append, del, errorBox, fmtDate, formData, get, h, post, put, swapView, toast } from '../ui.js';
 import { state } from '../app.js';
 
 const dateInput = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
@@ -36,10 +36,7 @@ function schoolFields(s = {}) {
 
 export async function schoolsView(app) {
   const o = await get('/api/operator/overview');
-  const reload = (keep) => {
-    app.replaceChildren();
-    schoolsView(app).then(() => keep && app.prepend(keep));
-  };
+  const reload = (keep) => swapView(app, (c) => schoolsView(c), keep);
   const form = h(
     'form',
     {
@@ -71,7 +68,7 @@ export async function schoolsView(app) {
       ? h('p.notice', 'Bitte zuerst unter ', h('a', { href: '#/einstellungen' }, 'Einstellungen'), ' Anschrift und Kontakt des Betreibers eintragen. Sie stehen im AVV.')
       : null,
     o.schools.length
-      ? h(
+      ? h('div.table-wrap', h(
           'table.table',
           h('thead', h('tr', h('th', 'Schule'), h('th', 'Schulkennung'), h('th', 'AVV'), h('th', 'Lehrkräfte'), h('th', 'Schüler'))),
           h(
@@ -87,7 +84,7 @@ export async function schoolsView(app) {
               )
             )
           )
-        )
+        ))
       : h('p.muted', 'Noch keine Schulen angelegt.'),
     h('section.card', form)
   );
@@ -95,10 +92,7 @@ export async function schoolsView(app) {
 
 export async function schoolView(app, { id }) {
   const s = await get(`/api/operator/schools/${id}`);
-  const reload = (keep) => {
-    app.replaceChildren();
-    schoolView(app, { id }).then(() => keep && app.prepend(keep));
-  };
+  const reload = (keep) => swapView(app, (c) => schoolView(c, { id }), keep);
   const act = (fn) => async (e) => {
     try {
       await fn(e);
@@ -185,7 +179,7 @@ export async function schoolView(app, { id }) {
   const admins = h(
     'section.card',
     h('h2', 'Admin-Konten der Schule'),
-    h(
+    h('div.table-wrap', h(
       'table.table',
       h(
         'tbody',
@@ -223,7 +217,7 @@ export async function schoolView(app, { id }) {
           )
         )
       )
-    ),
+    )),
     adminForm
   );
 

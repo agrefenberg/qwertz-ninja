@@ -95,7 +95,14 @@ export function vidisRoutes(app, db, { config, secureCookies, HttpError, schoolB
   }
 
   app.get('/api/vidis/login', async (req, res) => {
-    const m = await meta();
+    let m;
+    try {
+      m = await meta();
+    } catch (err) {
+      // VIDIS nicht erreichbar: zurück zur Anmeldeseite mit verständlicher Meldung statt einer Fehlerseite.
+      console.error('VIDIS nicht erreichbar:', err.message);
+      return res.redirect('/?vidis=nicht-erreichbar');
+    }
     const state = randomToken();
     const nonce = randomToken();
     const verifier = randomToken();

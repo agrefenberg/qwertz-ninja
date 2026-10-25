@@ -145,7 +145,7 @@ export function courseSection(cls, refresh) {
     )
   );
 
-  const lessonSel = h('select', lessons.map((l, i) => h('option', { value: l.id }, `${i + 1}. ${l.title}`)));
+  const lessonSel = h('select', { 'aria-label': 'Lektion' }, lessons.map((l, i) => h('option', { value: l.id }, `${i + 1}. ${l.title}`)));
   const upTo = h('input', { type: 'checkbox', checked: true });
   const bulk = (lock) => () => {
     const ids = selected();

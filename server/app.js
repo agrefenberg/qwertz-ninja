@@ -666,6 +666,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
 
   app.post('/api/classes', auth('teacher'), (req, res) => {
     const name = str(req.body.name, { max: 40, name: 'Klassenname' });
+    if (db.prepare('SELECT 1 FROM classes WHERE teacher_id = ? AND name = ? COLLATE NOCASE').get(req.user.id, name)) throw bad(`Du hast schon eine Klasse ${name}.`);
     const r = db.prepare('INSERT INTO classes (name, teacher_id, created_at) VALUES (?, ?, ?)').run(name, req.user.id, Date.now());
     res.json({ id: Number(r.lastInsertRowid) });
   });
@@ -673,6 +674,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
   app.patch('/api/classes/:id', auth('teacher'), (req, res) => {
     const cls = ownClass(req);
     const name = req.body.name !== undefined ? str(req.body.name, { max: 40, name: 'Klassenname' }) : cls.name;
+    if (db.prepare('SELECT 1 FROM classes WHERE teacher_id = ? AND name = ? COLLATE NOCASE AND id != ?').get(req.user.id, name, cls.id)) throw bad(`Du hast schon eine Klasse ${name}.`);
     const lb = req.body.leaderboard !== undefined ? (req.body.leaderboard ? 1 : 0) : cls.leaderboard_enabled;
     let rate = cls.course_pass_rate;
     if (req.body.passErrorRate !== undefined) {
@@ -1012,7 +1014,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
       )
       .all(cls.id);
     const schemes = new Map(db.prepare('SELECT * FROM grading_schemes WHERE teacher_id = ?').all(req.user.id).map((s) => [s.id, s]));
-    const KIND = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test' };
+    const KIND = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test', course: 'Kurs', focus: 'Fehlertraining' };
     const esc = (v) => {
       const s = v == null ? '' : String(v);
       return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
