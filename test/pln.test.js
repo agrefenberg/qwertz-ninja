@@ -192,6 +192,9 @@ test('PLN-Ablauf: anlegen, freigeben, schreiben, abgeben, PDF', async () => {
   await s2.post(`/api/me/plns/${plnId}/save`, { typed: src.slice(0, 80) });
   db.prepare('UPDATE pln_attempts SET started_at = started_at - 700000 WHERE user_id = (SELECT id FROM users WHERE username = ?)').run(c2.username);
   assert.equal((await s2.post(`/api/me/plns/${plnId}/save`, { typed: src.slice(0, 500) })).status, 400);
+  // War beim Zeitende die Verbindung weg, wird der eingefrorene Text als Endabgabe nachgereicht (bis 30 Minuten).
+  assert.equal((await s2.post(`/api/me/plns/${plnId}/save`, { typed: src.slice(0, 100), final: true })).status, 200);
+  assert.equal((await s2.post(`/api/me/plns/${plnId}/save`, { typed: src.slice(0, 200), final: true })).status, 400, 'nur einmal');
 
   const rows = (await teacher.get(`/api/plns/${plnId}`)).data.rows;
   const r1 = rows.find((r) => r.username === c1.username);
@@ -201,7 +204,9 @@ test('PLN-Ablauf: anlegen, freigeben, schreiben, abgeben, PDF', async () => {
   assert.ok(r1.grade.grade >= 1);
   const r2 = rows.find((r) => r.username === c2.username);
   assert.equal(r2.state, 'done');
-  assert.equal(r2.gross, 80);
+  assert.equal(r2.gross, 100);
+  assert.ok(r2.late_at, 'als nachgereicht markiert');
+  assert.equal((await teacher.get(`/api/plns/${plnId}`)).data.rows.find((r) => r.username === c2.username).gross, 100, 'zwischengespeicherte Bewertung');
 
   const pdf = await teacher.get(`/api/plns/${plnId}/abschriften.pdf`);
   assert.equal(pdf.status, 200);

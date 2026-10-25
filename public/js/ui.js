@@ -1,15 +1,26 @@
 // Kleine Helfer für DOM und Server-Zugriffe.
 
+export const OFFLINE_MESSAGE = 'Keine Verbindung zum Server. Bitte prüfe das Netz und versuche es erneut.';
+
 export async function api(method, url, body) {
-  const res = await fetch(url, {
-    method,
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    credentials: 'same-origin',
-  });
-  const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin',
+    });
+  } catch {
+    const err = new Error(OFFLINE_MESSAGE);
+    err.offline = true;
+    throw err;
+  }
+  const data = res.headers.get('content-type')?.includes('json') ? await res.json().catch(() => null) : null;
   if (!res.ok) {
-    const err = new Error(data?.error || `Fehler ${res.status}`);
+    const err = new Error(data?.error || (res.status >= 500 ? 'Der Server hat gerade ein Problem. Bitte gleich noch einmal versuchen.' : `Fehler ${res.status}`));
+    // Antworten ohne JSON (z. B. vom Proxy, wenn die App neu startet) gelten wie ein Verbindungsabbruch.
+    if (!data) err.offline = true;
     err.status = res.status;
     throw err;
   }
@@ -33,7 +44,8 @@ export function h(spec, attrs, ...children) {
   if (classes.length) el.className = classes.join(' ');
   for (const [k, v] of Object.entries(attrs)) {
     if (v == null || v === false) continue;
-    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    if (k === 'onsubmit' || (k === 'onclick' && el.tagName === 'BUTTON')) el.addEventListener(k.slice(2), busyWhile(el, v));
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
     else if (k === 'class') el.className += ` ${v}`;
     else if (k === 'value') el.value = v;
     else if (k === 'checked') el.checked = !!v;
@@ -41,6 +53,31 @@ export function h(spec, attrs, ...children) {
   }
   append(el, children);
   return el;
+}
+
+// Gegen Doppelklicks: Solange der Handler (async) läuft, ist der Knopf bzw. das Formular gesperrt.
+// So entstehen keine doppelten Klassen, Konten oder Abgaben, wenn der Server langsam antwortet.
+function busyWhile(el, handler) {
+  return (e) => {
+    if (el.dataset.busy) {
+      e.preventDefault();
+      return;
+    }
+    const out = handler(e);
+    if (!out || typeof out.then !== 'function') return out;
+    const buttons = el.tagName === 'FORM' ? [...el.querySelectorAll('button:not([type=button])')] : [el];
+    const locked = buttons.filter((b) => !b.disabled);
+    el.dataset.busy = '1';
+    el.setAttribute('aria-busy', 'true');
+    for (const b of locked) b.disabled = true;
+    const release = () => {
+      delete el.dataset.busy;
+      el.removeAttribute('aria-busy');
+      for (const b of locked) b.disabled = false;
+    };
+    out.then(release, release);
+    return out;
+  };
 }
 
 export function append(el, ...children) {

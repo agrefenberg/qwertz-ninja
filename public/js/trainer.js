@@ -6,14 +6,14 @@ import { compareTyped, metrics, normalizeChar } from './scoring.js';
 //  correct  – erst nach dem richtigen Zeichen geht es weiter
 //  free     – freies Tippen mit Rücktaste wie im Test; nur der Endstand zählt
 export class Trainer {
-  constructor({ text, errorMode = 'continue', showKeyboard = true, timeLimitMs = null, metric = 'apm', startAt = null, onFinish }) {
+  constructor({ text, errorMode = 'continue', showKeyboard = true, timeLimitMs = null, metric = 'apm', startAt = null, typed = '', onFinish }) {
     this.target = Array.from(text);
     this.errorMode = errorMode;
     this.timeLimitMs = timeLimitMs;
     this.metric = metric;
     this.onFinish = onFinish;
     this.startAt = startAt; // feste Startzeit (Test), sonst Start beim ersten Anschlag
-    this.typed = []; // getippte Zeichen (continue/free)
+    this.typed = errorMode === 'free' ? Array.from(typed) : []; // getippte Zeichen (continue/free); im Test fortgesetzter Stand
     this.pos = 0; // Position (correct)
     this.keystrokes = 0;
     this.extraStrokes = 0; // überzählige Anschläge am Wortende (continue)

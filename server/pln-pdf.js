@@ -57,6 +57,7 @@ function studentPage(doc, { school, className, pln, settings: st, scheme, e }) {
   doc.text(`Datum: ${date(attempt.started_at)}   Beginn: ${time(attempt.started_at)} Uhr   Ende: ${time(end)} Uhr`);
   if (attempt.lrs) doc.text(`Nachteilsausgleich: ${[st.lrsTimePct ? `${st.lrsTimePct} % mehr Zeit` : '', st.mode === 'count' && st.lrsLinesPct ? `${st.lrsLinesPct} % weniger Zeilen` : ''].filter(Boolean).join(', ') || 'ja'}`);
   if (attempt.left_count) doc.fillColor(RED).text(`Prüfungsfenster während des PLN ${attempt.left_count}× verlassen.`).fillColor('#000');
+  if (attempt.late_at) doc.text('Endabgabe nachgereicht: Die Verbindung war beim Zeitende unterbrochen.');
   doc.moveDown(0.5);
 
   // Ergebniszeile

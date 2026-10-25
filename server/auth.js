@@ -9,6 +9,25 @@ export function hashPassword(password) {
   return `scrypt$${salt.toString('base64')}$${hash.toString('base64')}`;
 }
 
+// Asynchron rechnet scrypt im Thread-Pool von Node. Viele gleichzeitige Anmeldungen zu Stundenbeginn
+// blockieren dann nicht den ganzen Server.
+const scryptAsync = (password, salt, len) =>
+  new Promise((resolve, reject) => crypto.scrypt(password, salt, len, (err, key) => (err ? reject(err) : resolve(key))));
+
+export async function hashPasswordAsync(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = await scryptAsync(password, salt, 32);
+  return `scrypt$${salt.toString('base64')}$${hash.toString('base64')}`;
+}
+
+export async function verifyPasswordAsync(password, stored) {
+  const [scheme, salt, hash] = String(stored).split('$');
+  if (scheme !== 'scrypt') return false;
+  const expected = Buffer.from(hash, 'base64');
+  const actual = await scryptAsync(password, Buffer.from(salt, 'base64'), expected.length);
+  return crypto.timingSafeEqual(actual, expected);
+}
+
 export function verifyPassword(password, stored) {
   const [scheme, salt, hash] = String(stored).split('$');
   if (scheme !== 'scrypt') return false;

@@ -215,7 +215,16 @@ export function runPractice(app, { title, subtitle, kind, makeText, assignmentId
       const res = await post('/api/results', { kind: assignmentId ? 'exercise' : kind, assignmentId, ...extra, ...r });
       holder.replaceChildren(resultPanel(res, r, { again: start, back }));
     } catch (e) {
-      toast(e.message, 'error');
+      // Das Ergebnis bleibt erhalten, bis es angekommen ist.
+      holder.replaceChildren(
+        h(
+          'section.card.save-problem',
+          { role: 'alert' },
+          h('h2', 'Ergebnis nicht gespeichert'),
+          h('p', e.message),
+          h('div.toolbar', h('button.primary', { onclick: () => finish(r) }, 'Erneut senden'), h('button', { onclick: start }, 'Verwerfen und neu starten'))
+        )
+      );
     }
   }
 
@@ -480,24 +489,62 @@ export async function assignmentView(app, { id }) {
 
 function testView(app, a) {
   const minutes = Math.round(a.duration_sec / 60);
+  const resume = a.attempt?.started && !a.attempt.submitted;
+  if (a.attempt?.submitted) {
+    append(app, h('p', h('a', { href: '#/' }, '← Zurück')), h('section.card', h('h1', a.title), h('p', 'Diesen Test hast du schon abgegeben. Dein Ergebnis siehst du im Verlauf.'), h('a.button', { href: '#/verlauf' }, 'Zum Verlauf')));
+    return;
+  }
   const intro = h(
     'section.card',
     h('h1', a.title),
-    h(
-      'ul',
-      h('li', `Du hast ${a.duration_sec % 60 ? `${a.duration_sec} Sekunden` : `${minutes} Minute${minutes === 1 ? '' : 'n'}`} Zeit.`),
-      h('li', 'Du darfst mit der Rücktaste korrigieren. Korrigierte Fehler zählen nicht, kosten aber Zeit.'),
-      h('li', 'Die Bildschirmtastatur ist ausgeblendet.'),
-      h('li', 'Du hast nur einen Versuch. Nach dem Start läuft die Zeit auch dann weiter, wenn du die Seite verlässt.')
-    ),
-    h('button.primary', { onclick: start }, 'Test starten')
+    resume
+      ? h('p', h('b', 'Du hast diesen Test schon begonnen.'), ' Er läuft mit der restlichen Zeit weiter. Dein bisher gespeicherter Text ist noch da.')
+      : h(
+          'ul',
+          h('li', `Du hast ${a.duration_sec % 60 ? `${a.duration_sec} Sekunden` : `${minutes} Minute${minutes === 1 ? '' : 'n'}`} Zeit.`),
+          h('li', 'Du darfst mit der Rücktaste korrigieren. Korrigierte Fehler zählen nicht, kosten aber Zeit.'),
+          h('li', 'Die Bildschirmtastatur ist ausgeblendet.'),
+          h('li', 'Du hast nur einen Versuch. Nach dem Start läuft die Zeit weiter, auch wenn du die Seite neu lädst.')
+        ),
+    h('button.primary', { onclick: start }, resume ? 'Test fortsetzen' : 'Test starten')
   );
   append(app, h('p', h('a', { href: '#/' }, '← Zurück')), intro);
 
   let trainer;
+  let saver;
+  let lastSaved = null;
+  const status = h('p.muted.small.test-save', { 'aria-live': 'polite' });
   const warn = (e) => {
     e.preventDefault();
     e.returnValue = '';
+  };
+  const save = async () => {
+    const typed = trainer?.typed.join('') ?? '';
+    if (!trainer || trainer.finished || typed === lastSaved) return;
+    try {
+      await post(`/api/tests/${a.id}/save`, { typed });
+      lastSaved = typed;
+      status.textContent = '';
+    } catch (e) {
+      if (e.offline) status.textContent = 'Keine Verbindung. Schreib einfach weiter, dein Text wird gesendet, sobald das Netz wieder da ist.';
+    }
+  };
+  // Beim Neuladen oder Schließen den letzten Stand noch schnell senden.
+  const beacon = () => {
+    if (!trainer || trainer.finished) return;
+    navigator.sendBeacon?.(`/api/tests/${a.id}/save`, new Blob([JSON.stringify({ typed: trainer.typed.join('') })], { type: 'application/json' }));
+  };
+  // Während des Tests ist das Menü gesperrt wie beim PLN: Ein Klick darauf soll den Test nicht beenden.
+  const lock = () => {
+    state.examLock = location.hash;
+    document.body.classList.add('exam-mode');
+  };
+  const unlock = () => {
+    state.examLock = null;
+    document.body.classList.remove('exam-mode');
+    clearInterval(saver);
+    window.removeEventListener('beforeunload', warn);
+    window.removeEventListener('pagehide', beacon);
   };
 
   async function start() {
@@ -507,33 +554,48 @@ function testView(app, a) {
     } catch (e) {
       return toast(e.message, 'error');
     }
-    window.addEventListener('beforeunload', warn);
+    const offset = s.serverNow - Date.now();
+    lastSaved = s.typed;
     trainer = new Trainer({
       text: s.text,
       errorMode: 'free',
       showKeyboard: false,
       timeLimitMs: s.durationSec * 1000,
-      startAt: Date.now() + s.countdownMs,
+      startAt: s.startedAt - offset,
+      typed: s.typed,
       metric: state.me.prefs.metric,
       onFinish: submit,
     });
-    intro.replaceWith(h('div', h('h1', a.title), trainer.el));
+    intro.replaceWith(h('div', h('h1', a.title), status, trainer.el));
+    lock();
+    window.addEventListener('beforeunload', warn);
+    window.addEventListener('pagehide', beacon);
+    saver = setInterval(save, 5000);
     trainer.focus();
   }
 
+  // Die Abgabe wird wiederholt, bis sie ankommt. Der Text ist da längst eingefroren.
   async function submit(r) {
-    window.removeEventListener('beforeunload', warn);
+    clearInterval(saver);
+    status.textContent = 'Wird abgegeben …';
     try {
       const res = await post(`/api/tests/${a.id}/submit`, { typed: r.typed, correctedErrors: r.correctedErrors, keyStats: r.keyStats });
+      unlock();
+      status.textContent = '';
       trainer.el.replaceWith(resultPanel(res, { ...r, errors: res.errors, durationMs: res.durationMs }, { back: '#/', test: true }));
     } catch (e) {
-      toast(e.message, 'error');
+      if (!e.offline) {
+        unlock();
+        status.textContent = '';
+        return toast(e.message, 'error');
+      }
+      status.textContent = 'Keine Verbindung zum Server. Dein Test ist auf diesem Gerät gesichert und wird abgegeben, sobald das Netz wieder da ist. Bitte das Fenster offen lassen.';
+      setTimeout(() => submit(r), 3000);
     }
   }
 
   state.cleanup = () => {
-    window.removeEventListener('beforeunload', warn);
-    if (trainer && !trainer.finished) trainer.finish(false);
+    unlock();
     trainer?.destroy();
   };
 }

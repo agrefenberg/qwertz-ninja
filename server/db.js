@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS test_attempts (
   assignment_id INTEGER NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
   started_at INTEGER NOT NULL,
   submitted_at INTEGER,
+  typed TEXT NOT NULL DEFAULT '',
+  saved_at INTEGER,
   PRIMARY KEY (user_id, assignment_id)
 );
 
@@ -150,6 +152,7 @@ CREATE TABLE IF NOT EXISTS pln_attempts (
   submitted_at INTEGER,
   left_count INTEGER NOT NULL DEFAULT 0,
   duration_ms INTEGER,
+  late_at INTEGER,
   PRIMARY KEY (pln_id, user_id)
 );
 
@@ -227,6 +230,9 @@ function migrate(db) {
   const has = (table, col) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
   if (!has('pln_attempts', 'left_count')) db.exec('ALTER TABLE pln_attempts ADD COLUMN left_count INTEGER NOT NULL DEFAULT 0');
   if (!has('pln_attempts', 'duration_ms')) db.exec('ALTER TABLE pln_attempts ADD COLUMN duration_ms INTEGER');
+  if (!has('pln_attempts', 'late_at')) db.exec('ALTER TABLE pln_attempts ADD COLUMN late_at INTEGER');
+  if (!has('test_attempts', 'typed')) db.exec("ALTER TABLE test_attempts ADD COLUMN typed TEXT NOT NULL DEFAULT ''");
+  if (!has('test_attempts', 'saved_at')) db.exec('ALTER TABLE test_attempts ADD COLUMN saved_at INTEGER');
   if (!has('plns', 'settings')) db.exec('ALTER TABLE plns ADD COLUMN settings TEXT');
   if (!has('users', 'school_id')) db.exec('ALTER TABLE users ADD COLUMN school_id INTEGER REFERENCES schools(id) ON DELETE CASCADE');
   if (!has('users', 'external_id')) db.exec('ALTER TABLE users ADD COLUMN external_id TEXT');

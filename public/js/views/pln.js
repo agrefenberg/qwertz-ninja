@@ -342,7 +342,12 @@ export async function plnView(app, { id }) {
               h(
                 'tr',
                 h('td', h('div', r.display_name), h('div.mono.muted.small', r.username)),
-                h('td', stateCell(r), r.left_count ? h('div', h('span.tag.tag-test', { title: 'Prüfungsfenster verlassen' }, `${r.left_count}× verlassen`)) : null),
+                h(
+                  'td',
+                  stateCell(r),
+                  r.left_count ? h('div', h('span.tag.tag-test', { title: 'Prüfungsfenster verlassen' }, `${r.left_count}× verlassen`)) : null,
+                  r.late_at ? h('div', h('span.tag', { title: 'Die Verbindung war beim Zeitende weg. Der beim Zeitende eingefrorene Text wurde später nachgereicht.' }, 'nachgereicht')) : null
+                ),
                 h('td', r.gross ?? '–'),
                 h('td', r.errors ?? '–'),
                 third ? h('td', thirdCell(r)) : null,
@@ -544,8 +549,26 @@ export async function studentPlnView(app, { id }) {
   const s = await get(`/api/me/plns/${id}`);
   const head = [h('p.pln-kicker', s.heading), h('h1', s.title)];
 
+  const done = () => h('section.card.pln-done', h('h2', 'Abgegeben'), h('p', 'Deine Abschrift ist gespeichert. Deine Lehrkraft bekommt sie unverändert zur Bewertung.'), h('a.button', { href: '#/' }, 'Zur Startseite'));
   if (s.ended) {
-    append(app, ...head, h('section.card.pln-done', h('h2', 'Abgegeben'), h('p', 'Deine Abschrift ist gespeichert. Deine Lehrkraft bekommt sie unverändert zur Bewertung.'), h('a.button', { href: '#/' }, 'Zur Startseite')));
+    const local = s.startedAt && readLocal(s.id, s.startedAt);
+    // War beim Zeitende die Verbindung weg, liegt der eingefrorene Text noch auf diesem Gerät: jetzt nachreichen.
+    if (!s.submitted && local && local.final) {
+      const box = h('section.card.pln-done', h('h2', 'Abgabe wird nachgereicht …'));
+      append(app, ...head, box);
+      const send = async () => {
+        try {
+          await post(`/api/me/plns/${s.id}/save`, { typed: local.typed, final: true, leftCount: local.leftCount || 0 });
+          clearLocal(s.id, s.startedAt);
+          box.replaceWith(done());
+        } catch (e) {
+          box.replaceChildren(h('h2', 'Abgabe noch nicht angekommen'), h('p', e.message), h('button.primary', { onclick: send }, 'Erneut senden'));
+        }
+      };
+      return send();
+    }
+    if (s.startedAt) clearLocal(s.id, s.startedAt);
+    append(app, ...head, done());
     return;
   }
   if (!s.startedAt) {
@@ -606,8 +629,20 @@ function runPln(app, s, head) {
     onpaste: (e) => e.preventDefault(),
     ondrop: (e) => e.preventDefault(),
     oncontextmenu: (e) => e.preventDefault(),
+    // Tab würde den Fokus unbemerkt aus dem Feld schieben, und alles danach Getippte ginge verloren.
+    onkeydown: (e) => e.key === 'Tab' && e.preventDefault(),
+    oninput: () => {
+      writeLocal();
+      if (!saveSoon) saveSoon = setTimeout(() => ((saveSoon = null), save()), 2000);
+    },
+    onblur: () => {
+      // Im Prüfungsfenster bleibt der Fokus im Schreibfeld.
+      if (!finished && !area.readOnly) setTimeout(() => document.hasFocus() && !finished && area.focus(), 0);
+    },
   });
-  area.value = s.typed || '';
+  // Der Stand auf diesem Gerät ist neuer als der auf dem Server, wenn zuletzt nicht mehr gespeichert werden konnte.
+  const local = readLocal(s.id, s.startedAt);
+  area.value = local && (!s.savedAt || local.at > s.savedAt) ? local.typed : s.typed || '';
   const overlay = h('div.pln-countdown', '');
   const leftNote = h('div.pln-warning', { hidden: true });
   append(app, ...head, h('div.pln-bar', clock, status), leftNote, h('div.pln-stage', area, overlay));
@@ -651,9 +686,11 @@ function runPln(app, s, head) {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   };
 
-  let lastSent = null;
+  let lastSent = s.typed ?? null;
   let lastLeft = leftCount;
   let finished = false;
+  let saveSoon = null;
+  const writeLocal = (final = false) => writeLocalStore(s.id, s.startedAt, { typed: area.value, at: Date.now() + offset, leftCount, final });
   const save = async (final = false) => {
     const typed = area.value;
     if (!final && typed === lastSent && leftCount === lastLeft) return;
@@ -661,25 +698,50 @@ function runPln(app, s, head) {
       await post(`/api/me/plns/${s.id}/save`, { typed, final, leftCount });
       lastSent = typed;
       lastLeft = leftCount;
+      status.classList.remove('pln-save-warn');
       status.textContent = final ? 'Abgegeben' : `Gespeichert ${new Date().toLocaleTimeString('de-DE')}`;
     } catch (e) {
-      status.textContent = e.message;
+      if (e.offline) {
+        status.classList.add('pln-save-warn');
+        status.textContent = 'Keine Verbindung. Dein Text ist auf diesem Gerät gesichert. Schreib einfach weiter.';
+      } else status.textContent = e.message;
       if (final) throw e;
     }
   };
+  // Beim Neuladen oder Schließen den letzten Stand noch schnell senden.
+  const beacon = () => {
+    if (finished || Date.now() + offset < s.startedAt) return;
+    navigator.sendBeacon?.(`/api/me/plns/${s.id}/save`, new Blob([JSON.stringify({ typed: area.value, final: false, leftCount })], { type: 'application/json' }));
+  };
+  window.addEventListener('pagehide', beacon);
 
   const finish = async () => {
     if (finished) return;
     finished = true;
+    clearTimeout(saveSoon);
     area.readOnly = true;
+    writeLocal(true);
     clock.textContent = '0:00';
     overlay.textContent = 'Die Zeit ist um. Dein Text wird gespeichert …';
     overlay.hidden = false;
-    try {
-      await save(true);
-      overlay.replaceChildren(h('strong', 'Abgegeben.'), h('span', 'Deine Abschrift ist gespeichert.'), h('a.button', { href: '#/' }, 'Zur Startseite'));
-    } catch (e) {
-      overlay.replaceChildren(h('strong', 'Speichern nicht möglich'), h('span', e.message), h('a.button', { href: '#/' }, 'Zur Startseite'));
+    // Die Abgabe wird wiederholt, bis sie ankommt. Der Text ist eingefroren und liegt auch auf diesem Gerät.
+    for (;;) {
+      try {
+        await save(true);
+        clearLocal(s.id, s.startedAt);
+        overlay.replaceChildren(h('strong', 'Abgegeben.'), h('span', 'Deine Abschrift ist gespeichert.'), h('a.button', { href: '#/' }, 'Zur Startseite'));
+        break;
+      } catch (e) {
+        if (!e.offline) {
+          overlay.replaceChildren(h('strong', 'Speichern nicht möglich'), h('span', e.message), h('a.button', { href: '#/' }, 'Zur Startseite'));
+          break;
+        }
+        overlay.replaceChildren(
+          h('strong', 'Keine Verbindung zum Server.'),
+          h('span', 'Dein Text ist auf diesem Gerät gesichert und wird abgegeben, sobald das Netz wieder da ist. Bitte das Fenster offen lassen und deiner Lehrkraft Bescheid geben.')
+        );
+        await new Promise((r) => setTimeout(r, 3000));
+      }
     }
     unlock();
     leftNote.hidden = true;
@@ -714,10 +776,36 @@ function runPln(app, s, head) {
   state.cleanup = () => {
     clearInterval(timer);
     clearInterval(autosave);
+    clearTimeout(saveSoon);
     window.removeEventListener('beforeunload', warn);
+    window.removeEventListener('pagehide', beacon);
     unlock();
     if (!finished) save();
   };
+}
+
+// Kopie der Abschrift auf diesem Gerät, bis sie sicher abgegeben ist. Danach wird sie gelöscht.
+const localKey = (id, startedAt) => `qn-pln-${id}-${startedAt}`;
+function readLocal(id, startedAt) {
+  try {
+    return JSON.parse(localStorage.getItem(localKey(id, startedAt)));
+  } catch {
+    return null;
+  }
+}
+function writeLocalStore(id, startedAt, value) {
+  try {
+    localStorage.setItem(localKey(id, startedAt), JSON.stringify(value));
+  } catch {
+    // Kein Speicher im Browser: dann zählt nur der Stand auf dem Server.
+  }
+}
+function clearLocal(id, startedAt) {
+  try {
+    localStorage.removeItem(localKey(id, startedAt));
+  } catch {
+    // nichts zu tun
+  }
 }
 
 const fmtMin = (ms) => dec(Math.round(ms / 6000) / 10);

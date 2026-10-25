@@ -200,7 +200,13 @@ test('Gesamtablauf: Einrichtung, Lehrkraft, Klasse, Übung, Test, Note, Export',
 
   const start = await s1.post(`/api/tests/${testA.data.id}/start`);
   assert.equal(start.status, 200);
-  assert.equal((await s1.post(`/api/tests/${testA.data.id}/start`)).status, 400, 'nur ein Versuch');
+  // Ein zweiter Start setzt denselben Versuch fort (Neuladen), mit gespeichertem Zwischenstand.
+  assert.equal((await s1.post(`/api/tests/${testA.data.id}/save`, { typed: 'Zwischen' })).status, 200);
+  const again = await s1.post(`/api/tests/${testA.data.id}/start`);
+  assert.equal(again.status, 200);
+  assert.equal(again.data.resumed, true);
+  assert.equal(again.data.typed, 'Zwischen');
+  assert.equal(again.data.startedAt, start.data.startedAt, 'die Zeit läuft weiter');
 
   // Startzeit zurückdatieren, als wären 30 Sekunden vergangen.
   db.prepare('UPDATE test_attempts SET started_at = ? WHERE assignment_id = ?').run(Date.now() - 30000, testA.data.id);
@@ -212,6 +218,7 @@ test('Gesamtablauf: Einrichtung, Lehrkraft, Klasse, Übung, Test, Note, Export',
   assert.equal(sub.data.gross, 60);
   assert.ok(sub.data.durationMs >= 30000 && sub.data.durationMs < 32000);
   assert.equal((await s1.post(`/api/tests/${testA.data.id}/submit`, { typed })).status, 400, 'keine zweite Abgabe');
+  assert.equal((await s1.post(`/api/tests/${testA.data.id}/start`)).status, 400, 'nur ein Versuch');
 
   const res = await teacher.get(`/api/assignments/${testA.data.id}/results`);
   const row = res.data.rows.find((r) => r.username === c1.username);
@@ -223,6 +230,12 @@ test('Gesamtablauf: Einrichtung, Lehrkraft, Klasse, Übung, Test, Note, Export',
   // Lehrkraft setzt Versuch zurück.
   assert.equal((await teacher.del(`/api/assignments/${testA.data.id}/attempts/${row.user_id}`)).status, 200);
   assert.equal((await s1.post(`/api/tests/${testA.data.id}/start`)).status, 200);
+  // Späte Abgabe (Verbindung war weg): Gewertet wird der zuletzt rechtzeitig gespeicherte Stand.
+  await s1.post(`/api/tests/${testA.data.id}/save`, { typed: target.slice(0, 10) });
+  db.prepare('UPDATE test_attempts SET started_at = ? WHERE assignment_id = ?').run(Date.now() - 600000, testA.data.id);
+  const late = await s1.post(`/api/tests/${testA.data.id}/submit`, { typed: target.slice(0, 40), keyStats: {} });
+  assert.equal(late.status, 200);
+  assert.equal(late.data.gross, 10);
 
   // Rangliste nur nach Freigabe.
   assert.equal((await s1.get('/api/leaderboard')).data.enabled, false);
