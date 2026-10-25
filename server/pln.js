@@ -13,6 +13,7 @@ export { FORMATS, RETURN_RULES, plnHeading };
 export const PLN_TITLE = plnHeading({ durationMin: 10 });
 export const PLN_DURATION_MS = 10 * 60 * 1000;
 export const PLN_GRACE_MS = 15000;
+export const PLN_LATE_MS = 30 * 60 * 1000;
 export const PLN_MAX_CHARS = 8000;
 
 // Einstellungen eines PLN. Ältere PLN ohne Einstellungen werden wie bisher mit dem Notenschlüssel bewertet.

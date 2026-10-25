@@ -15,7 +15,7 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 - **Anschläge/min (netto)** zählen nur richtige Anschläge. **WPM** = Anschläge/min ÷ 5.
 - **Tests:** Korrigieren mit der Rücktaste ist erlaubt. Gewertet wird nur der Endstand, korrigierte Fehler zählen also nicht. Fehler werden als Editierdistanz gezählt: Ein ausgelassener oder doppelter Buchstabe ist ein Fehler und verschiebt nicht den Rest des Textes.
 - **Notenschlüssel:** Mindestzahl Netto-Anschläge pro Minute für die Noten 1 bis 5, optional mit Abzug je Fehler. Die App schlägt die Note nur vor.
-- Die Startzeit eines Tests misst der Server. Jeder Test hat einen Versuch, den die Lehrkraft zurücksetzen kann.
+- Die Startzeit eines Tests misst der Server. Jeder Test hat einen Versuch, den die Lehrkraft zurücksetzen kann. Der Zwischenstand wird gespeichert: Nach Neuladen oder Absturz läuft der Test mit der Restzeit weiter. Während des Tests ist das Menü gesperrt.
 
 ### PLN: 10-Minuten-Abschrift
 
@@ -27,7 +27,7 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 - Weitere Einstellungen: Arbeitszeit, Großbuchstabe zählt 2 Anschläge, ein Fehler je Wort, letzte Sinneinheit frei, Wiederholungsfehler, Returntaste, Zeichen je Zeile, Gewichtung, Nachteilsausgleich (25 % mehr Zeit bzw. 20 % weniger Zeilen).
 - Nachteilsausgleich (LRS/Legasthenie) kreuzt die Lehrkraft je Person vor dem Start an; dazu gibt es eine Vorlage mit größerer Schrift. „Ohne 10 F.“ setzt die Note 6, wenn das Zehn-Finger-System nicht angewendet wurde.
 - Die Druckvorlage (Courier New, Standard 14 Punkt, eineinhalbfacher Zeilenabstand, nach je 5 Zeilen ein Abstand; Größe und Abstand beim Drucken wählbar) enthält immer den Hinweis „Es ist ein Fließtext im Zehn-Finger-System zu schreiben“ und eine Markierung, bis wohin für die Note 1 getippt werden muss. Passt eine Zeile nicht aufs Blatt, wird die Schrift automatisch verkleinert. Die Vorlage für den Nachteilsausgleich wird in großer Schrift quer gedruckt.
-- Nach der Freigabe startet jede Schülerin und jeder Schüler selbst und schreibt die eingestellte Zeit lang, ohne den Text am Bildschirm zu sehen. Der Stand wird alle 10 Sekunden zwischengespeichert und nach Ablauf unverändert festgehalten.
+- Nach der Freigabe startet jede Schülerin und jeder Schüler selbst und schreibt die eingestellte Zeit lang, ohne den Text am Bildschirm zu sehen. Der Stand wird wenige Sekunden nach jeder Eingabe gespeichert, liegt zusätzlich im Browser und wird nach Ablauf unverändert festgehalten. Ist beim Zeitende das Netz weg, wird der eingefrorene Text bis zu 30 Minuten später nachgereicht und bei der Lehrkraft als „nachgereicht“ markiert.
 - Wertung: zwei Tippfehler in einem Wort zählen als ein Fehler (alle werden markiert), in der letzten Sinneinheit wird kein Fehler gewertet, Returntaste je nach Einstellung. Zu jedem Notenvorschlag steht der Rechenweg in der Tabelle und im PDF.
 - Die Lehrkraft lädt alle Abschriften als ein PDF herunter: je Person eine Seite mit Pseudonym, Datum und Uhrzeit, unverändertem Text mit markierten Fehlern und Fehlerliste.
 

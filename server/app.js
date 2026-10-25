@@ -10,9 +10,10 @@ import {
   generatePassword,
   generateUsername,
   hashPassword,
+  hashPasswordAsync,
   sessionUser,
   slugify,
-  verifyPassword,
+  verifyPasswordAsync,
 } from './auth.js';
 import { BADGES, levelFor, newBadges } from './gamify.js';
 import { compareTyped, metrics, normalizeChar, normalizeText, suggestGrade } from '../public/js/scoring.js';
@@ -20,7 +21,8 @@ import { nextPurgeDate } from './retention.js';
 import { operatorRoutes } from './operator.js';
 import { vidisRoutes, vidisConfigured } from './vidis.js';
 import { createDemo, hasDemo, removeDemo, prefixFor, DEMO_PASSWORD } from './demo.js';
-import { buildPlnText, evalRules, evaluatePln, gradePln, note1Chars, note1Position, plnHeading, plnSettings, templateLines, PLN_DURATION_MS, PLN_GRACE_MS, PLN_MAX_CHARS } from './pln.js';
+import { evaluatePlnCached } from './pln-eval.js';
+import { buildPlnText, evalRules, gradePln, note1Chars, note1Position, plnHeading, plnSettings, templateLines, PLN_DURATION_MS, PLN_GRACE_MS, PLN_LATE_MS, PLN_MAX_CHARS } from './pln.js';
 import { durationMsFor, linesFor, normalizeSettings, strokes } from '../public/js/pln-rules.js';
 import { writePlnPdf } from './pln-pdf.js';
 import { LESSONS, lessonById, starsFor, PASS_ERROR_RATE, PASS_ERROR_RATE_MAX } from '../public/js/course.js';
@@ -154,12 +156,12 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
   });
 
   const loginAttempts = new Map();
-  app.post('/api/login', (req, res) => {
+  app.post('/api/login', async (req, res) => {
     const key = `${req.ip}|${String(req.body.username).toLowerCase()}`;
     const a = loginAttempts.get(key) || { n: 0, until: 0 };
     if (a.until > Date.now()) throw new HttpError(429, 'Zu viele Versuche. Bitte eine Minute warten.');
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(String(req.body.username || '').trim());
-    if (!user || !verifyPassword(String(req.body.password || ''), user.password_hash)) {
+    if (!user || !(await verifyPasswordAsync(String(req.body.password || ''), user.password_hash))) {
       a.n++;
       if (a.n >= 5) Object.assign(a, { n: 0, until: Date.now() + 60000 });
       loginAttempts.set(key, a);
@@ -185,11 +187,12 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     res.json({ ok: true, redirect: session?.id_token ? await vidisApi.logoutUrl(session.id_token) : null });
   });
 
-  app.post('/api/me/password', auth('teacher', 'admin', 'operator'), (req, res) => {
+  app.post('/api/me/password', auth('teacher', 'admin', 'operator'), async (req, res) => {
     const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
-    if (!verifyPassword(String(req.body.current || ''), row.password_hash)) throw bad('Das aktuelle Passwort ist falsch.');
+    if (!(await verifyPasswordAsync(String(req.body.current || ''), row.password_hash))) throw bad('Das aktuelle Passwort ist falsch.');
     const next = str(req.body.next, { min: 10, name: 'Neues Passwort' });
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(next), req.user.id);
+    const hash = await hashPasswordAsync(next);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
     res.json({ ok: true });
   });
 
@@ -476,12 +479,14 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       .prepare(
         `SELECT a.id, a.type, a.title, a.duration_sec, a.error_mode, a.due_at, a.created_at, t.title AS text_title,
            (SELECT COUNT(*) FROM results r WHERE r.assignment_id = a.id AND r.user_id = ? AND r.completed = 1) AS done,
-           (SELECT started_at FROM test_attempts ta WHERE ta.assignment_id = a.id AND ta.user_id = ?) AS started_at
+           (SELECT started_at FROM test_attempts ta WHERE ta.assignment_id = a.id AND ta.user_id = ?) AS started_at,
+           (SELECT submitted_at FROM test_attempts ta WHERE ta.assignment_id = a.id AND ta.user_id = ?) AS submitted_at
          FROM assignments a JOIN texts t ON t.id = a.text_id
          WHERE a.class_id = ? ORDER BY a.created_at DESC`
       )
-      .all(req.user.id, req.user.id, req.user.class_id ?? -1);
-    res.json(rows.map((r) => ({ ...r, done: r.done > 0 || (r.type === 'test' && r.started_at !== null) })));
+      .all(req.user.id, req.user.id, req.user.id, req.user.class_id ?? -1);
+    // Ein begonnener, aber nicht abgegebener Test bleibt offen, damit er fortgesetzt werden kann.
+    res.json(rows.map(({ submitted_at, ...r }) => ({ ...r, done: r.done > 0 || (r.type === 'test' && submitted_at != null) })));
   });
 
   app.get('/api/me/assignments/:id', auth('student'), (req, res) => {
@@ -492,38 +497,67 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     // Den Testtext gibt es erst beim Start, damit niemand vorher üben kann.
     if (a.type === 'exercise') a.text = db.prepare('SELECT content FROM texts WHERE id = ?').get(a.text_id).content;
     delete a.text_id;
+    if (a.type === 'test') {
+      const t = db.prepare('SELECT started_at, submitted_at FROM test_attempts WHERE user_id = ? AND assignment_id = ?').get(req.user.id, a.id);
+      a.attempt = t ? { started: true, submitted: !!t.submitted_at } : null;
+    }
     res.json(a);
   });
 
   // ---------- Tests ----------
 
-  app.post('/api/tests/:id/start', auth('student'), (req, res) => {
+  function ownTest(req) {
     const a = db
       .prepare("SELECT a.*, t.content FROM assignments a JOIN texts t ON t.id = a.text_id WHERE a.id = ? AND a.class_id = ? AND a.type = 'test'")
       .get(int(req.params.id), req.user.class_id ?? -1);
     if (!a) throw notFound();
-    if (a.due_at && a.due_at < Date.now()) throw bad('Der Test ist bereits abgelaufen.');
-    const startedAt = Date.now() + COUNTDOWN_MS;
-    try {
-      db.prepare('INSERT INTO test_attempts (user_id, assignment_id, started_at) VALUES (?, ?, ?)').run(req.user.id, a.id, startedAt);
-    } catch {
-      throw bad('Diesen Test hast du schon begonnen. Deine Lehrkraft kann ihn bei Bedarf zurücksetzen.');
-    }
-    res.json({ text: a.content, durationSec: a.duration_sec, countdownMs: COUNTDOWN_MS });
+    return a;
+  }
+  const testAttempt = (req, a) => db.prepare('SELECT * FROM test_attempts WHERE user_id = ? AND assignment_id = ?').get(req.user.id, a.id);
+
+  // Ein begonnener Test läuft nach Neuladen oder Absturz mit der Restzeit weiter. Die Zeit läuft dabei weiter.
+  app.post('/api/tests/:id/start', auth('student'), (req, res) => {
+    const a = ownTest(req);
+    const old = testAttempt(req, a);
+    if (old?.submitted_at) throw bad('Diesen Test hast du schon abgegeben.');
+    if (!old && a.due_at && a.due_at < Date.now()) throw bad('Der Test ist bereits abgelaufen.');
+    const startedAt = old ? old.started_at : Date.now() + COUNTDOWN_MS;
+    if (!old) db.prepare('INSERT INTO test_attempts (user_id, assignment_id, started_at) VALUES (?, ?, ?)').run(req.user.id, a.id, startedAt);
+    res.json({
+      text: a.content,
+      durationSec: a.duration_sec,
+      countdownMs: Math.max(0, startedAt - Date.now()),
+      startedAt,
+      serverNow: Date.now(),
+      typed: old?.typed || '',
+      resumed: !!old,
+    });
+  });
+
+  // Zwischenstand, damit nach Neuladen oder Verbindungsabbruch nichts verloren geht.
+  app.post('/api/tests/:id/save', auth('student'), (req, res) => {
+    const a = ownTest(req);
+    const attempt = testAttempt(req, a);
+    if (!attempt) throw bad('Der Test wurde nicht gestartet.');
+    if (attempt.submitted_at) throw bad('Der Test wurde bereits abgegeben.');
+    if (Date.now() > attempt.started_at + a.duration_sec * 1000 + GRACE_MS) throw bad('Die Zeit ist abgelaufen.');
+    if (typeof req.body.typed !== 'string') throw bad('Text fehlt.');
+    const typed = Array.from(req.body.typed).slice(0, Array.from(a.content).length).join('');
+    db.prepare('UPDATE test_attempts SET typed = ?, saved_at = ? WHERE user_id = ? AND assignment_id = ?').run(typed, Date.now(), req.user.id, a.id);
+    res.json({ ok: true });
   });
 
   app.post('/api/tests/:id/submit', auth('student'), (req, res) => {
-    const id = int(req.params.id);
-    const a = db
-      .prepare("SELECT a.*, t.content FROM assignments a JOIN texts t ON t.id = a.text_id WHERE a.id = ? AND a.class_id = ? AND a.type = 'test'")
-      .get(id, req.user.class_id ?? -1);
-    if (!a) throw notFound();
-    const attempt = db.prepare('SELECT * FROM test_attempts WHERE user_id = ? AND assignment_id = ?').get(req.user.id, id);
+    const a = ownTest(req);
+    const id = a.id;
+    const attempt = testAttempt(req, a);
     if (!attempt) throw bad('Der Test wurde nicht gestartet.');
     if (attempt.submitted_at) throw bad('Der Test wurde bereits abgegeben.');
     const limitMs = a.duration_sec * 1000;
     const elapsed = Date.now() - attempt.started_at;
-    if (elapsed > limitMs + GRACE_MS * 6) throw bad('Die Abgabe kam zu spät und wurde nicht gewertet.');
+    // Kommt die Abgabe spät (Verbindung war weg), zählt der letzte rechtzeitig gespeicherte Stand.
+    const late = elapsed > limitMs + GRACE_MS * 6;
+    if (late) req.body = { typed: attempt.typed };
     const target = normalizeText(a.content);
     const typed = Array.from(String(req.body.typed ?? '')).map(normalizeChar).join('').slice(0, target.length);
     const durationMs = Math.max(1000, Math.min(elapsed, limitMs));
@@ -720,21 +754,23 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     res.json({ id: cls.id, name: cls.name });
   });
 
-  app.post('/api/classes/:id/students', auth('teacher'), (req, res) => {
+  app.post('/api/classes/:id/students', auth('teacher'), async (req, res) => {
     const cls = ownClass(req);
     const count = int(req.body.count, { min: 1, max: 40, name: 'Anzahl' });
     const slug = slugify(cls.name);
+    const passwords = Array.from({ length: count }, generatePassword);
+    const hashes = await Promise.all(passwords.map(hashPasswordAsync));
     const created = tx(db, () => {
       const out = [];
       for (let i = 0; i < count; i++) {
         const username = generateUsername(db, slug);
-        const password = generatePassword();
+        const password = passwords[i];
         const animal = username.split('-')[1];
         const displayName = `${animal[0].toUpperCase()}${animal.slice(1)} ${username.split('-')[2]}`;
         db.prepare("INSERT INTO users (role, username, display_name, password_hash, class_id, school_id, created_at) VALUES ('student', ?, ?, ?, ?, ?, ?)").run(
           username,
           displayName,
-          hashPassword(password),
+          hashes[i],
           cls.id,
           req.user.school_id,
           Date.now()
@@ -746,10 +782,11 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     res.json({ className: cls.name, credentials: created });
   });
 
-  app.post('/api/students/:id/reset-password', auth('teacher'), (req, res) => {
+  app.post('/api/students/:id/reset-password', auth('teacher'), async (req, res) => {
     const s = ownStudent(req);
     const password = generatePassword();
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), s.id);
+    const hash = await hashPasswordAsync(password);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, s.id);
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(s.id);
     const cls = db.prepare('SELECT name FROM classes WHERE id = ?').get(s.class_id);
     res.json({ className: cls.name, credentials: [{ username: s.username, password, displayName: s.display_name }] });
@@ -757,7 +794,7 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
 
   // Passwörter sind nur als Hash gespeichert. Ein neuer Druckbogen bedeutet deshalb neue Passwörter;
   // Konten, Pseudonyme und Ergebnisse bleiben erhalten.
-  app.post('/api/classes/:id/reset-passwords', auth('teacher'), (req, res) => {
+  app.post('/api/classes/:id/reset-passwords', auth('teacher'), async (req, res) => {
     const cls = ownClass(req);
     let students = db.prepare("SELECT id, username, display_name FROM users WHERE class_id = ? AND role = 'student' ORDER BY display_name").all(cls.id);
     if (Array.isArray(req.body.studentIds) && req.body.studentIds.length) {
@@ -765,10 +802,12 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       students = students.filter((s) => wanted.has(s.id));
     }
     if (!students.length) throw bad('Keine Schüler ausgewählt.');
+    const passwords = students.map(() => generatePassword());
+    const hashes = await Promise.all(passwords.map(hashPasswordAsync));
     const credentials = tx(db, () =>
-      students.map((s) => {
-        const password = generatePassword();
-        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), s.id);
+      students.map((s, i) => {
+        const password = passwords[i];
+        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashes[i], s.id);
         db.prepare('DELETE FROM sessions WHERE user_id = ?').run(s.id);
         return { username: s.username, password, displayName: s.display_name };
       })
@@ -1035,7 +1074,9 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     const schoolName = str(req.body.schoolName, { max: 120, name: 'Schulname' });
     const yearEnd = String(req.body.yearEnd || '');
     const m = /^(\d{2})-(\d{2})$/.exec(yearEnd);
-    if (!m || +m[1] < 1 || +m[1] > 12 || +m[2] < 1 || +m[2] > 28) throw bad('Schuljahresende bitte als MM-TT angeben (Tag höchstens 28).');
+    // Februar nur bis 28, damit das Datum in jedem Jahr existiert.
+    const maxDay = m ? [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][+m[1] - 1] : 0;
+    if (!m || !maxDay || +m[2] < 1 || +m[2] > maxDay) throw bad('Schuljahresende bitte als gültiges Datum MM-TT angeben, z. B. 07-31.');
     const privacyNote = typeof req.body.privacyNote === 'string' ? req.body.privacyNote.slice(0, 5000) : '';
     db.prepare('UPDATE schools SET name = ?, year_end = ?, privacy_note = ? WHERE id = ?').run(schoolName, yearEnd, privacyNote, req.user.school_id);
     res.json({ ok: true, nextPurge: nextPurgeDate(schoolById(req.user.school_id)).toISOString().slice(0, 10) });
@@ -1069,9 +1110,9 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
   const flagsOf = (plnId, userId) => db.prepare('SELECT lrs, no_touch FROM pln_flags WHERE pln_id = ? AND user_id = ?').get(plnId, userId) || { lrs: 0, no_touch: 0 };
 
   // Auswertung und Notenvorschlag einer abgeschlossenen Abschrift.
-  function assess(p, s, scheme, a, flags) {
+  async function assess(p, s, scheme, a, flags) {
     const lrs = !!flags?.lrs;
-    const ev = evaluatePln(p.text, a.typed, evalRules(s, p.text, lrs));
+    const ev = await evaluatePlnCached(p.text, a.typed, evalRules(s, p.text, lrs));
     return { ev, grade: gradePln(s, ev, { scheme, lrs, noTouch: !!flags?.no_touch, durationMs: attemptMs(a) }) };
   }
 
@@ -1154,7 +1195,7 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     res.json({ ok: true, textChanged: textChanged && !started });
   });
 
-  app.get('/api/plns/:id', auth('teacher'), (req, res) => {
+  app.get('/api/plns/:id', auth('teacher'), async (req, res) => {
     const p = ownPln(req);
     const s = plnSettings(p);
     const cls = db.prepare('SELECT * FROM classes WHERE id = ?').get(p.class_id);
@@ -1162,7 +1203,7 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     const now = Date.now();
     const rows = db
       .prepare(
-        `SELECT u.id AS user_id, u.display_name, u.username, a.started_at, a.saved_at, a.submitted_at, a.left_count, a.duration_ms, a.typed,
+        `SELECT u.id AS user_id, u.display_name, u.username, a.started_at, a.saved_at, a.submitted_at, a.left_count, a.duration_ms, a.late_at, a.typed,
            COALESCE(f.lrs, 0) AS lrs, COALESCE(f.no_touch, 0) AS no_touch
          FROM users u LEFT JOIN pln_attempts a ON a.user_id = u.id AND a.pln_id = ?
          LEFT JOIN pln_flags f ON f.user_id = u.id AND f.pln_id = ?
@@ -1183,10 +1224,10 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
         scheme,
       },
       schoolName: schoolById(req.user.school_id)?.name || '',
-      rows: rows.map(({ typed, ...r }) => {
+      rows: await Promise.all(rows.map(async ({ typed, ...r }) => {
         const attempt = r.started_at ? { ...r } : null;
         const ended = plnEnded(attempt, now);
-        const out = ended ? assess(p, s, scheme, { ...r, typed }, r) : null;
+        const out = ended ? await assess(p, s, scheme, { ...r, typed }, r) : null;
         return {
           ...r,
           lrs: !!r.lrs,
@@ -1198,7 +1239,7 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
           missingLines: out?.ev.missingLines ?? null,
           grade: out?.grade ?? null,
         };
-      }),
+      })),
     });
   });
 
@@ -1235,26 +1276,28 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     res.json({ ok: true });
   });
 
-  app.get('/api/plns/:id/abschriften.pdf', auth('teacher'), (req, res) => {
+  app.get('/api/plns/:id/abschriften.pdf', auth('teacher'), async (req, res) => {
     const p = ownPln(req);
     const s = plnSettings(p);
     const cls = db.prepare('SELECT * FROM classes WHERE id = ?').get(p.class_id);
     const scheme = schemeOf(p.grading_scheme_id);
     const now = Date.now();
-    const entries = db
+    const ended = db
       .prepare(
-        `SELECT u.display_name, u.username, a.started_at, a.submitted_at, a.left_count, a.duration_ms, a.typed,
+        `SELECT u.display_name, u.username, a.started_at, a.submitted_at, a.left_count, a.duration_ms, a.late_at, a.typed,
            COALESCE(f.lrs, 0) AS lrs, COALESCE(f.no_touch, 0) AS no_touch
          FROM pln_attempts a JOIN users u ON u.id = a.user_id
          LEFT JOIN pln_flags f ON f.pln_id = a.pln_id AND f.user_id = a.user_id
          WHERE a.pln_id = ? AND u.class_id = ? ORDER BY u.display_name`
       )
       .all(p.id, p.class_id)
-      .filter((a) => plnEnded(a, now))
-      .map((a) => {
-        const { ev, grade } = assess(p, s, scheme, a, a);
+      .filter((a) => plnEnded(a, now));
+    const entries = await Promise.all(
+      ended.map(async (a) => {
+        const { ev, grade } = await assess(p, s, scheme, a, a);
         return { student: { display_name: a.display_name, username: a.username }, attempt: { ...a, duration_ms: attemptMs(a) }, ev, grade };
-      });
+      })
+    );
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="pln-${slugify(cls.name)}-${slugify(p.title)}.pdf"`);
     writePlnPdf(res, { school: schoolById(req.user.school_id)?.name || '', className: cls.name, pln: p, settings: s, scheme, entries });
@@ -1282,7 +1325,9 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
       startedAt: a?.started_at ?? null,
       leftCount: a?.left_count ?? 0,
       ended: plnEnded(a, now),
-      typed: a && !plnEnded(a, now) ? a.typed : null,
+      submitted: !!a?.submitted_at,
+      savedAt: a?.saved_at ?? null,
+      typed: a && !a.submitted_at ? a.typed : null,
     };
   }
 
@@ -1320,12 +1365,26 @@ export function createApp(db, { secureCookies = false, vidis = null } = {}) {
     if (!a) throw bad('Der PLN wurde nicht gestartet.');
     const now = Date.now();
     if (a.submitted_at) throw bad('Der PLN wurde bereits abgegeben.');
-    if (now > a.started_at + attemptMs(a) + PLN_GRACE_MS) throw bad('Die Zeit ist abgelaufen. Gewertet wird der zuletzt gespeicherte Stand.');
+    const endAt = a.started_at + attemptMs(a);
+    // War die Verbindung beim Zeitende weg, darf die Endabgabe (der beim Zeitende eingefrorene Text) bis zu
+    // 30 Minuten später nachgereicht werden. Die Lehrkraft sieht sie als „nachgereicht“.
+    const late = now > endAt + PLN_GRACE_MS;
+    if (late && (req.body.final !== true || now > endAt + PLN_LATE_MS)) throw bad('Die Zeit ist abgelaufen. Gewertet wird der zuletzt gespeicherte Stand.');
     if (typeof req.body.typed !== 'string') throw bad('Text fehlt.');
     const typed = Array.from(req.body.typed).slice(0, PLN_MAX_CHARS).join('');
-    const final = req.body.final === true || now > a.started_at + attemptMs(a);
+    const final = req.body.final === true || now > endAt;
     const left = Math.max(a.left_count, Math.min(Number(req.body.leftCount) | 0, 10000));
-    db.prepare('UPDATE pln_attempts SET typed = ?, saved_at = ?, submitted_at = ?, left_count = ? WHERE pln_id = ? AND user_id = ?').run(typed, now, final ? now : null, left, p.id, req.user.id);
+    db.prepare('UPDATE pln_attempts SET typed = ?, saved_at = ?, submitted_at = ?, left_count = ?, late_at = ? WHERE pln_id = ? AND user_id = ?').run(
+      typed,
+      now,
+      final ? now : null,
+      left,
+      late ? now : null,
+      p.id,
+      req.user.id
+    );
+    // Auswertung schon jetzt im Hintergrund anstoßen, damit die Übersicht der Lehrkraft sie fertig vorfindet.
+    if (final) assess(p, plnSettings(p), schemeOf(p.grading_scheme_id), { ...a, typed }, flagsOf(p.id, req.user.id)).catch(() => {});
     res.json({ ok: true, final });
   });
 

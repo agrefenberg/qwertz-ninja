@@ -457,6 +457,25 @@ button.link {
   border-radius: var(--radius-s);
   font-weight: 500;
 }
+/* Ergebnis oder Abschrift konnte nicht gespeichert werden: bleibt stehen, bis es geklappt hat. */
+.save-problem {
+  color: #9b1c20;
+  background: var(--err-bg);
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-s);
+  margin: 0.8rem 0;
+}
+.save-problem h2 {
+  color: inherit;
+}
+.pln-save.pln-save-warn,
+.test-save:not(:empty) {
+  color: #9b1c20;
+  background: var(--err-bg);
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius-s);
+  font-weight: 600;
+}
 .form-error[hidden] {
   display: none;
 }

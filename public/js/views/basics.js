@@ -80,15 +80,25 @@ export function basicsView(app) {
         showKeyboard: true,
         metric: state.me.prefs.metric,
         onFinish: async (r) => {
-          next.disabled = false;
           if (s.final) {
-            try {
-              const res = await post('/api/results', { kind: 'basics', ...r });
-              if (res.newBadges?.length) toast(`Abzeichen: ${res.newBadges.map((b) => b.name).join(', ')}`);
-            } catch (e) {
-              toast(e.message, 'error');
-            }
+            // Erst wenn das Ergebnis gespeichert ist, gilt die Grundstellung als erledigt. Sonst landet man
+            // nach „Fertig“ wieder bei Schritt 1.
+            const problem = h('div.save-problem', { role: 'alert' });
+            const send = async () => {
+              try {
+                const res = await post('/api/results', { kind: 'basics', ...r });
+                problem.remove();
+                if (res.newBadges?.length) toast(`Abzeichen: ${res.newBadges.map((b) => b.name).join(', ')}`);
+                next.disabled = false;
+                next.focus();
+              } catch (e) {
+                problem.replaceChildren(h('strong', 'Nicht gespeichert. '), h('span', e.message), ' ', h('button.small', { onclick: send }, 'Erneut senden'));
+                if (!problem.isConnected) next.parentElement.before(problem);
+              }
+            };
+            return send();
           }
+          next.disabled = false;
           next.focus();
         },
       });
