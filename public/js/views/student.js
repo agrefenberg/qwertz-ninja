@@ -610,7 +610,7 @@ export async function leaderboardView(app) {
   append(app, 
     h('h1', 'Rangliste'),
     h('p.muted', 'Beste Geschwindigkeit der letzten 7 Tage (Übungen ab einer Minute oder 200 Anschlägen, höchstens 5 % Fehler).'),
-    h(
+    h('div.table-wrap', h(
       'table.table',
       h('thead', h('tr', h('th', 'Platz'), h('th', 'Name'), h('th', wpm ? 'WPM' : 'Anschläge/min'), h('th', 'Gürtel'))),
       h(
@@ -619,7 +619,7 @@ export async function leaderboardView(app) {
           h('tr', { class: r.me ? 'me' : null }, h('td', r.bestApm != null ? `${i + 1}.` : '–'), h('td', r.name), h('td', fmtNum(wpm ? r.bestWpm : r.bestApm)), h('td', r.level.belt))
         )
       )
-    )
+    ))
   );
 }
 
@@ -628,7 +628,7 @@ export async function historyView(app) {
   append(app, 
     h('h1', 'Verlauf'),
     results.length
-      ? h(
+      ? h('div.table-wrap', h(
           'table.table',
           h('thead', h('tr', h('th', 'Datum'), h('th', 'Art'), h('th', 'Dauer'), h('th', 'Anschläge/min'), h('th', 'WPM'), h('th', 'Fehler'))),
           h(
@@ -645,7 +645,7 @@ export async function historyView(app) {
               )
             )
           )
-        )
+        ))
       : h('p.muted', 'Noch keine Ergebnisse.')
   );
 }

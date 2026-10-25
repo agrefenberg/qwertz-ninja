@@ -1,10 +1,10 @@
-import { append, del, errorBox, fmtDate, fmtDuration, fmtNum, fmtRate, formData, get, h, passwordInput, patch, post, put, toast } from '../ui.js';
+import { append, del, errorBox, fmtDate, fmtDuration, fmtNum, fmtRate, formData, get, h, passwordInput, patch, post, put, swapView, toast } from '../ui.js';
 import { enterStudentView, refreshMe, state } from '../app.js';
 import { errorAnalysis, stars } from './student.js';
 import { plnSection } from './pln.js';
 import { courseMiniBar, courseSection } from './course-overview.js';
 
-const KIND_LABEL = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test' };
+const KIND_LABEL = { text: 'Text', words: 'Wörter', weak: 'Schwachstellen', basics: 'Grundstellung', exercise: 'Aufgabe', test: 'Test', course: 'Kurs', focus: 'Fehlertraining' };
 
 function back(href = '#/') {
   return h('p', h('a', { href }, '← Zurück'));
@@ -69,18 +69,7 @@ export async function classView(app, { id }) {
     get('/api/texts'),
     get('/api/grading-schemes'),
   ]);
-  const reload = () => {
-    app.replaceChildren();
-    classView(app, { id });
-  };
-  // Neu aufbauen, ohne dass die Seite nach oben springt.
-  const refresh = async () => {
-    const y = window.scrollY;
-    const fresh = h('div');
-    await classView(fresh, { id });
-    app.replaceChildren(...fresh.childNodes);
-    window.scrollTo(0, y);
-  };
+  const reload = () => swapView(app, (c) => classView(c, { id }));
 
   const createForm = h(
     'form.inline-form',
@@ -96,7 +85,7 @@ export async function classView(app, { id }) {
         }
       },
     },
-    h('input', { name: 'count', type: 'number', min: 1, max: 40, value: 25, required: true }),
+    h('input', { name: 'count', type: 'number', min: 1, max: 40, value: 25, required: true, 'aria-label': 'Anzahl Schülerzugänge' }),
     h('button.primary', { type: 'submit' }, 'Zugänge erzeugen')
   );
 
@@ -132,7 +121,7 @@ export async function classView(app, { id }) {
     ),
     h('section.card', h('h2', 'Aufgaben und Tests'), assignmentList(assignments, reload), assignmentForm(id, texts, schemes, reload)),
     plnSection(id, texts, schemes),
-    courseSection(cls, refresh),
+    courseSection(cls, reload),
     h(
       'section.card',
       h('h2', `Schüler (${cls.students.length})`),
@@ -195,7 +184,7 @@ function studentTable(cls, reload) {
         if (!confirm(`Neuer Druckbogen ${ids.length ? `für ${n} ausgewählte Schüler` : `für alle ${n} Schüler`}?\n\nDie Passwörter werden dabei neu erzeugt, die alten gelten nicht mehr. Pseudonyme, Benutzernamen und Ergebnisse bleiben erhalten.`)) return;
         try {
           const res = await post(`/api/classes/${cls.id}/reset-passwords`, { studentIds: ids });
-          showCredentials(document.getElementById('app'), res, reload);
+          showCredentials(document.querySelector('#app > div'), res, reload);
         } catch (e) {
           toast(e.message, 'error');
         }
@@ -216,7 +205,7 @@ function studentRows(students, boxes, all, sync, reload, lessons) {
     'div.table-wrap',
     h(
       'table.table',
-      h('thead', h('tr', h('th', all), h('th', 'Pseudonym'), h('th', 'Benutzername'), h('th', 'Gürtel'), h('th', 'Übungen'), h('th', 'Kurs'), h('th', 'Ø Anschl./min'), h('th', 'Ø Fehler'), h('th', 'Zuletzt aktiv'), h('th', ''))),
+      h('thead', h('tr', h('th', all), h('th', 'Pseudonym'), h('th', 'Gürtel'), h('th', 'Übungen'), h('th', 'Kurs'), h('th', 'Ø Anschl./min'), h('th', 'Ø Fehler'), h('th', 'Zuletzt aktiv'), h('th', ''))),
       h(
         'tbody',
         students.map((s) =>
@@ -227,8 +216,8 @@ function studentRows(students, boxes, all, sync, reload, lessons) {
               boxes.set(s.id, b);
               return b;
             })()),
-            h('td', h('a', { href: `#/schueler/${s.id}` }, s.display_name)),
-            h('td.mono', s.username),
+            // Pseudonym und Benutzername in einer Spalte, damit die Aktionen auch auf 1366 px Breite sichtbar bleiben.
+            h('td.student-cell', h('a', { href: `#/schueler/${s.id}` }, s.display_name), h('span.mono.muted.small', s.username)),
             h('td', s.level.belt),
             h('td', s.runs),
             h('td', courseMiniBar(s.course, lessons)),
@@ -242,7 +231,7 @@ function studentRows(students, boxes, all, sync, reload, lessons) {
                 {
                   onclick: confirmDo(`Passwort für ${s.display_name} zurücksetzen?`, async () => {
                     const res = await post(`/api/students/${s.id}/reset-password`);
-                    showCredentials(document.getElementById('app'), res, reload);
+                    showCredentials(document.querySelector('#app > div'), res, reload);
                   }),
                 },
                 'Passwort neu'
@@ -336,6 +325,7 @@ function assignmentForm(classId, texts, schemes, reload) {
         e.preventDefault();
         const showError = errorBox(form);
         const d = formData(form);
+        if (d.dueAt && new Date(d.dueAt) < new Date() && !confirm('Die Frist liegt in der Vergangenheit. Trotzdem anlegen?')) return;
         try {
           await post(`/api/classes/${classId}/assignments`, {
             type: d.type,
@@ -373,10 +363,7 @@ function assignmentForm(classId, texts, schemes, reload) {
 
 export async function assignmentResultsView(app, { id }) {
   const { assignment: a, rows } = await get(`/api/assignments/${id}/results`);
-  const reload = () => {
-    app.replaceChildren();
-    assignmentResultsView(app, { id });
-  };
+  const reload = () => swapView(app, (c) => assignmentResultsView(c, { id }));
   const isTest = a.type === 'test';
   const status = (r) => (r.created_at ? 'abgegeben' : r.started_at ? 'begonnen' : 'offen');
   append(app, 
@@ -508,11 +495,7 @@ export async function studentView(app, { id }) {
     h('p.muted.mono', s.username),
     h('p', h('a.button.small', { href: `/api/students/${id}/export.json`, download: true }, 'Datenauskunft herunterladen (JSON)'), h('span.muted.small', ' Alle zu diesem Konto gespeicherten Daten, z. B. für eine Auskunft nach Art. 15 DSGVO.')),
     h('h2', 'Kurs'),
-    studentCourse(s, id, () => {
-      const y = window.scrollY;
-      app.replaceChildren();
-      studentView(app, { id }).then(() => window.scrollTo(0, y));
-    }),
+    studentCourse(s, id, () => swapView(app, (c) => studentView(c, { id }))),
     h('h2', 'Fehleranalyse'),
     errorAnalysis(s.errors, { practice: false }),
     h('h2', 'Ergebnisse'),
@@ -546,10 +529,7 @@ export async function studentView(app, { id }) {
 
 export async function textsView(app) {
   const texts = await get('/api/texts');
-  const reload = () => {
-    app.replaceChildren();
-    textsView(app);
-  };
+  const reload = () => swapView(app, (c) => textsView(c));
   const own = texts.filter((t) => t.own);
   const builtin = texts.filter((t) => !t.own);
 
@@ -607,10 +587,7 @@ export async function textsView(app) {
 
 export async function schemesView(app) {
   const schemes = await get('/api/grading-schemes');
-  const reload = () => {
-    app.replaceChildren();
-    schemesView(app);
-  };
+  const reload = () => swapView(app, (c) => schemesView(c));
   const defaults = [240, 200, 160, 120, 80];
   const form = h(
     'form',
@@ -643,7 +620,7 @@ export async function schemesView(app) {
   append(app, 
     h('h1', 'Notenschlüssel'),
     schemes.length
-      ? h(
+      ? h('div.table-wrap', h(
           'table.table',
           h('thead', h('tr', h('th', 'Name'), [1, 2, 3, 4, 5].map((g) => h('th', `Note ${g}`)), h('th', 'Fehlerabzug'), h('th', ''))),
           h(
@@ -658,7 +635,7 @@ export async function schemesView(app) {
               )
             )
           )
-        )
+        ))
       : h('p.muted', 'Noch kein Notenschlüssel angelegt.'),
     h('section.card', form)
   );

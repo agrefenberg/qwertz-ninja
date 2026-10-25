@@ -80,6 +80,22 @@ function busyWhile(el, handler) {
   };
 }
 
+// Baut eine Ansicht neu auf, ohne dass die Seite nach oben springt: erst fertig aufbauen, dann austauschen.
+// Mit keep (z. B. den neuen Zugangsdaten) steht dieser Kasten oben und die Seite scrollt dorthin.
+export async function swapView(old, render, keep = null) {
+  const y = window.scrollY;
+  const fresh = h('div');
+  try {
+    await render(fresh);
+  } finally {
+    if (keep) fresh.prepend(keep);
+    if (old.isConnected) {
+      old.replaceWith(fresh);
+      window.scrollTo(0, keep ? 0 : y);
+    }
+  }
+}
+
 export function append(el, ...children) {
   for (const c of children.flat(Infinity)) {
     if (c == null || c === false) continue;
@@ -109,13 +125,14 @@ export function fmtDuration(ms) {
 
 export function toast(msg, kind = 'info') {
   for (const old of document.querySelectorAll('.toast')) old.remove();
-  const t = h(`div.toast.toast-${kind}`, msg);
+  // Screenreader lesen die Meldung vor; Fehler bleiben länger stehen.
+  const t = h(`div.toast.toast-${kind}`, { role: kind === 'error' ? 'alert' : 'status' }, msg);
   document.body.append(t);
   setTimeout(() => t.classList.add('show'), 10);
   setTimeout(() => {
     t.classList.remove('show');
     setTimeout(() => t.remove(), 300);
-  }, 3500);
+  }, kind === 'error' ? 6000 : 3500);
 }
 
 // Passwortfeld mit Augen-Knopf: zeigt das Passwort auf Wunsch kurz an und verbirgt es nach 10 Sekunden wieder.

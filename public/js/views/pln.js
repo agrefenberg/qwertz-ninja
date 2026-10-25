@@ -13,6 +13,7 @@ const NOTES = ['Note 1', 'Note 2', 'Note 3', 'Note 4', 'Note 5'];
 
 const time = (ms) => new Date(ms).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 const dec = (n) => String(n).replace('.', ',');
+const minutesText = (n) => `${dec(n)} ${Number(n) === 1 ? 'Minute' : 'Minuten'}`;
 const statusTag = (status) => h(`span.tag.pln-status.pln-status-${status}`, STATUS_LABEL[status]);
 
 function confirmDo(msg, fn) {
@@ -159,7 +160,13 @@ function settingsFields(initial, schemes, { locked = false, open = false } = {})
 export function plnSection(classId, texts, schemes) {
   const list = h('div', h('p.muted', 'Wird geladen …'));
   const load = async () => {
-    const plns = await get(`/api/classes/${classId}/plns`);
+    let plns;
+    try {
+      plns = await get(`/api/classes/${classId}/plns`);
+    } catch (err) {
+      list.replaceChildren(h('p.form-error', err.message, ' ', h('button.small', { onclick: () => load() }, 'Erneut versuchen')));
+      return;
+    }
     list.replaceChildren(
       plns.length
         ? h(
@@ -259,8 +266,9 @@ export async function plnView(app, { id }) {
 
   // Einstellungen: aufklappbar unter dem Kopf, Regeln stehen als eine Zeile darüber.
   const settings = settingsFields(s, schemes, { locked: anyStarted, open: true });
+  // Das Formular ist selbst die Karte (ohne :has(), damit auch Firefox ESR 115 keine leere Karte zeigt).
   const settingsForm = h(
-    'form.pln-edit',
+    'form.card.pln-edit.pln-edit-card',
     {
       hidden: true,
       onsubmit: async (e) => {
@@ -309,12 +317,12 @@ export async function plnView(app, { id }) {
       ' ',
       h('button.link.small', { onclick: () => { settingsForm.hidden = !settingsForm.hidden; } }, 'Bewertung einstellen')
     ),
-    h('section.card.pln-edit-card', settingsForm),
+    settingsForm,
     h(
       'div.pln-flow',
       step(1, 'Vorlage drucken', 'Der Text liegt nur auf Papier vor.', h('a.button.small', { href: `#/pln/${id}/vorlage` }, 'Drucken'), h('a.small', { href: `#/pln/${id}/vorlage-nta` }, 'große Schrift')),
       step(2, pln.status === 'open' ? 'Läuft' : pln.status === 'closed' ? 'Beendet' : 'Freigeben', 'Nachteilsausgleich vorher in der Tabelle ankreuzen.', releaseStep),
-      step(3, 'Abschriften', `${done} abgegeben, ${running} schreiben gerade.`, h('a.button.small', { href: `/api/plns/${id}/abschriften.pdf`, download: true }, `PDF (${done})`))
+      step(3, 'Abschriften', `${done} abgegeben, ${running} schreiben gerade.`, done ? h('a.button.small', { href: `/api/plns/${id}/abschriften.pdf`, download: true }, `PDF (${done})`) : h('button.small', { disabled: true, title: 'Noch keine Abgaben' }, 'PDF'))
     ),
     h(
       'section.card',
@@ -460,7 +468,7 @@ export async function plnSheetView(app, { id, nta = false }) {
     );
   renderBody();
   const minutes = nta && s.lrsTimePct ? Math.round(s.durationMin * (1 + s.lrsTimePct / 100) * 10) / 10 : s.durationMin;
-  const goalInfo = `${fmtNum(goal)} Anschläge in ${dec(minutes)} Minuten`;
+  const goalInfo = `${fmtNum(goal)} Anschläge in ${minutesText(minutes)}`;
   const goalHint =
     s.mode === 'count'
       ? h('li', `Schreibe alle ${short ? linesFor(s, true) : s.targetLines} Zeilen ab, also bis zur Markierung `, marker(), ` (${goalInfo}).`)
@@ -489,7 +497,7 @@ export async function plnSheetView(app, { id, nta = false }) {
         s.capitalDouble ? h('li', 'Ein Großbuchstabe zählt zwei Anschläge.') : null,
         h('li', 'Die Returntaste nicht benutzen: Am Zeilenende einfach mit einem Leerzeichen weiterschreiben.'),
         h('li', 'Der Nummernblock darf verwendet werden. Korrigieren mit der Rücktaste ist erlaubt.'),
-        h('li', `Du hast ab dem Start genau ${dec(minutes)} Minuten. Danach wird dein Text automatisch gespeichert.`)
+        h('li', `Du hast ab dem Start genau ${minutesText(minutes)}. Danach wird dein Text automatisch gespeichert.`)
       ),
       body
     )
@@ -587,7 +595,7 @@ export async function studentPlnView(app, { id }) {
           h('li', 'Lege dein Blatt mit dem Text neben die Tastatur. Am Bildschirm siehst du den Text nicht.'),
           h('li', 'Es ist ein Fließtext im Zehn-Finger-System zu schreiben. Die Returntaste nicht benutzen.'),
           h('li', 'Der Nummernblock darf verwendet werden. Korrigieren mit der Rücktaste ist erlaubt.'),
-          h('li', h('b', `Du hast genau ${fmtMin(s.durationMs)} Minuten.`), ' Danach wird dein Text automatisch gespeichert. Du kannst nur einmal beginnen.')
+          h('li', h('b', `Du hast genau ${minutesText(fmtMin(s.durationMs))}.`), ' Danach wird dein Text automatisch gespeichert. Du kannst nur einmal beginnen.')
         ),
         h(
           'button.primary.big',

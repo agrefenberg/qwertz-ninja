@@ -177,6 +177,8 @@ function renderNav() {
   );
 }
 
+const finish = () => setTitle(document.getElementById('app'));
+
 export async function route() {
   state.cleanup?.();
   state.cleanup = null;
@@ -185,16 +187,16 @@ export async function route() {
   try {
     if (!state.setup) state.setup = await get('/api/setup');
     renderNav();
-    if (path === '/datenschutz') return privacyView(app);
-    if (path === '/impressum') return imprintView(app);
-    if (state.setup.needsSetup) return setupView(app);
+    if (path === '/datenschutz') return finish(await privacyView(app));
+    if (path === '/impressum') return finish(await imprintView(app));
+    if (state.setup.needsSetup) return finish(await setupView(app));
     if (!state.me) await refreshMe();
     renderNav();
-    if (!state.me) return loginView(app);
+    if (!state.me) return finish(await loginView(app));
     // Über VIDIS angemeldete Schüler treten zuerst mit dem Code ihrer Lehrkraft einer Klasse bei.
     if (state.me.role === 'student' && !state.me.class) return student.joinClassView(app);
     // Lernende wiederholen beim ersten Anmelden die Grundstellung.
-    if (state.me.role === 'student' && !state.me.onboardingDone && path !== '/grundstellung') {
+    if (state.me.role === 'student' && !state.me.onboardingDone && !state.me.preview && path !== '/grundstellung') {
       location.hash = '#/grundstellung';
       return;
     }
@@ -206,18 +208,39 @@ export async function route() {
         const container = h('div');
         app.replaceChildren(container);
         window.scrollTo(0, 0);
-        return await view(container, params);
+        // Dauert das Laden länger, steht statt einer leeren Seite eine Ladeanzeige da.
+        const loading = h('p.muted.loading', { role: 'status' }, 'Wird geladen …');
+        const timer = setTimeout(() => !container.childNodes.length && container.isConnected && app.append(loading), 250);
+        try {
+          return await view(container, params);
+        } finally {
+          clearTimeout(timer);
+          loading.remove();
+          if (container.isConnected) setTitle(container);
+        }
       }
     }
     app.replaceChildren(h('h1', 'Seite nicht gefunden'), h('p', h('a', { href: '#/' }, 'Zur Startseite')));
+    setTitle(app);
   } catch (e) {
     if (e.status === 401) {
       state.me = null;
       return route();
     }
     console.error(e);
-    app.replaceChildren(h('h1', 'Da ist etwas schiefgelaufen'), h('p.form-error', e.message), h('p', h('a', { href: '#/' }, 'Zur Startseite')));
+    app.replaceChildren(
+      h('h1', e.offline ? 'Keine Verbindung' : 'Da ist etwas schiefgelaufen'),
+      h('p.form-error', e.message),
+      h('div.toolbar', h('button.primary', { onclick: () => route() }, 'Erneut versuchen'), h('a.button', { href: '#/' }, 'Zur Startseite'))
+    );
+    setTitle(app);
   }
+}
+
+// Jede Seite bekommt einen eigenen Titel (Browser-Tab, Verlauf, Screenreader).
+function setTitle(root) {
+  const h1 = root.querySelector('h1')?.textContent.trim();
+  document.title = h1 && h1 !== 'QWERTZ Ninja' ? `${h1} · QWERTZ Ninja` : 'QWERTZ Ninja';
 }
 
 window.addEventListener('hashchange', () => {
