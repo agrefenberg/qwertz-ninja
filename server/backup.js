@@ -19,6 +19,7 @@ const target = path.join(dir, `qwertz-ninja-${stamp}.sqlite`);
 fs.rmSync(target, { force: true });
 
 const db = new DatabaseSync(dbFile, { readOnly: true });
+db.exec('PRAGMA busy_timeout = 5000');
 db.prepare('VACUUM INTO ?').run(target);
 db.close();
 

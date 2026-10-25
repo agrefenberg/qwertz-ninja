@@ -36,13 +36,13 @@ export function avvSections({ school, operator, vidis, https }) {
     ['§ 2 Art und Zweck der Verarbeitung, Art der Daten, betroffene Personen', [
       'Zweck: Unterricht im Tastschreiben, Lernstandsrückmeldung an Schülerinnen und Schüler sowie Lehrkräfte, Durchführung und Auswertung von Tests und PLN.',
       'Betroffene Personen: Schülerinnen und Schüler, Lehrkräfte und mit der Verwaltung der Anwendung beauftragte Personen der Schule.',
-      'Daten der Schülerinnen und Schüler: pseudonymer Benutzername und Anzeigename (ohne Klarnamen und ohne E-Mail-Adresse), Klassenzugehörigkeit, Passwort ausschließlich als Hash, Übungs- und Testergebnisse (Anschläge, Fehler, Dauer, Fehlerquote), Tastenstatistik und Fehleranalyse, Kursfortschritt, Punkte und Abzeichen, Abschriften aus PLN mit Notenvorschlag.',
-      'Daten der Lehrkräfte und der Schuladministration: Benutzername, Anzeigename, Passwort ausschließlich als Hash, angelegte Klassen, Texte, Notenschlüssel, Aufgaben und PLN.',
+      'Daten der Schülerinnen und Schüler: pseudonymer Benutzername und Anzeigename (ohne Klarnamen und ohne E-Mail-Adresse), Klassenzugehörigkeit, Passwort ausschließlich als Hash, Übungs- und Testergebnisse (Anschläge, Fehler, Dauer, Fehlerquote), Tastenstatistik und Fehleranalyse, Kursfortschritt, Punkte und Abzeichen, Abschriften aus PLN mit Notenvorschlag, je PLN die Kennzeichen „Nachteilsausgleich“ und „Zehn-Finger-System nicht angewendet“, sofern die Lehrkraft sie setzt.',
+      'Daten der Lehrkräfte und der Schuladministration: Benutzername, selbst gewählter Anzeigename, Passwort ausschließlich als Hash, angelegte Klassen, Texte, Notenschlüssel, Aufgaben und PLN.',
       vidis
-        ? 'Bei Anmeldung über den Vermittlungsdienst VIDIS erhält der Auftragsverarbeiter zusätzlich eine pseudonyme Kennung, die Rolle, die Schulkennung und das Bundesland, bei Lehrkräften gegebenenfalls Vor- und Nachname. Der Vermittlungsdienst wird nicht vom Auftragsverarbeiter beauftragt.'
+        ? 'Bei Anmeldung über den Vermittlungsdienst VIDIS erhält der Auftragsverarbeiter zusätzlich eine pseudonyme Kennung, die Rolle, die Schulkennung und das Bundesland. Übermittelte Namen werden nicht gespeichert. Der Vermittlungsdienst wird nicht vom Auftragsverarbeiter beauftragt.'
         : null,
-      'Technische Daten: ein Sitzungs-Cookie zur Anmeldung. Es gibt keine Tracking- oder Analyse-Cookies. IP-Adressen werden nur kurzzeitig im Arbeitsspeicher zur Begrenzung von Anmeldeversuchen verarbeitet und nicht gespeichert.',
-      'Besondere Kategorien personenbezogener Daten nach Art. 9 DSGVO werden nicht verarbeitet.',
+      'Technische Daten: ein Sitzungs-Cookie zur Anmeldung. Es gibt keine Tracking- oder Analyse-Cookies. IP-Adressen werden nur kurzzeitig (höchstens 15 Minuten) im Arbeitsspeicher zur Begrenzung von Anmeldeversuchen verarbeitet und nicht gespeichert.',
+      'Besondere Kategorien personenbezogener Daten (Art. 9 DSGVO): Das Kennzeichen „Nachteilsausgleich“ kann bei Lese-Rechtschreib-Störung (LRS) Rückschlüsse auf die Gesundheit zulassen und ist dann als Gesundheitsdatum zu behandeln. Gespeichert wird nur, dass für einen PLN ein Nachteilsausgleich gilt, ohne Grund oder Diagnose. Es ist nur für die zuständige Lehrkraft sichtbar und wird mit den übrigen Leistungsdaten zum Schuljahresende gelöscht. Weitere besondere Kategorien werden nicht verarbeitet.',
     ]],
     ['§ 3 Weisungen', [
       'Der Auftragsverarbeiter verarbeitet die Daten nur auf dokumentierte Weisung des Verantwortlichen, es sei denn, er ist durch Unionsrecht oder deutsches Recht dazu verpflichtet. Weisungen erfolgen in Textform. Hält der Auftragsverarbeiter eine Weisung für rechtswidrig, weist er den Verantwortlichen unverzüglich darauf hin.',
@@ -75,7 +75,7 @@ export function avvSections({ school, operator, vidis, https }) {
   const toms = [
     ['Vertraulichkeit (Art. 32 Abs. 1 lit. b DSGVO)', [
       `Zutrittskontrolle: Der Server steht ${op.location} und ist nur dem Auftragsverarbeiter zugänglich.`,
-      'Zugangskontrolle: Administration des Servers nur durch den Auftragsverarbeiter mit persönlichem Zugang. Anmeldung in der Anwendung nur mit Benutzername und Passwort oder über VIDIS. Passwörter werden mit scrypt gehasht, Anmeldeversuche werden begrenzt, Sitzungs-Cookies sind HttpOnly und SameSite=Strict.',
+      'Zugangskontrolle: Administration des Servers nur durch den Auftragsverarbeiter mit persönlichem Zugang. Anmeldung in der Anwendung nur mit Benutzername und Passwort oder über VIDIS. Passwörter werden mit scrypt gehasht, Anmeldeversuche werden begrenzt, Sitzungs-Cookies sind HttpOnly und SameSite=Strict, eine Anmeldung gilt höchstens 12 Stunden.',
       'Zugriffskontrolle: Rollenkonzept. Schülerinnen und Schüler sehen nur ihre eigenen Daten, Lehrkräfte nur ihre eigenen Klassen, die Schuladministration nur ihre Schule. Der Betreiber verwaltet Schulen und Administrationskonten und hat in der Anwendung keinen Zugriff auf Leistungsdaten.',
       'Trennungskontrolle: Die Daten jeder Schule sind über eine Schulkennung getrennt; alle Abfragen sind auf die eigene Schule beschränkt.',
       'Pseudonymisierung: Schülerkonten tragen automatisch erzeugte Pseudonyme ohne Klarnamen und ohne E-Mail-Adresse. Die Zuordnung zu realen Personen kennt nur die Schule.',
@@ -87,7 +87,7 @@ export function avvSections({ school, operator, vidis, https }) {
       'Eingabekontrolle: Ergebnisse und PLN-Abschriften werden mit Zeitstempel gespeichert; PLN-Abschriften werden nach Ablauf der Bearbeitungszeit nicht mehr verändert.',
     ]],
     ['Verfügbarkeit und Belastbarkeit (Art. 32 Abs. 1 lit. b und c DSGVO)', [
-      'Nächtliche Sicherung der Datenbank, die letzten 30 Sicherungen werden aufbewahrt. Automatische Sicherheitsupdates des Betriebssystems. Die Anwendung startet nach Störungen automatisch neu.',
+      'Nächtliche Sicherung der Datenbank. Auf dem Server werden die letzten 14 Sicherungen aufbewahrt, auf einem zusätzlichen externen Sicherungsziel (falls eingerichtet) die letzten 30, dort verschlüsselt, wenn ein Sicherungspasswort hinterlegt ist. Vor jedem Update wird zusätzlich gesichert. Automatische Sicherheitsupdates des Betriebssystems. Die Anwendung startet nach Störungen automatisch neu.',
     ]],
     ['Verfahren zur regelmäßigen Überprüfung (Art. 32 Abs. 1 lit. d DSGVO)', [
       'Updates werden aus einem versionierten Quellcode-Archiv eingespielt und vorher mit automatisierten Tests geprüft. Content-Security-Policy und weitere Sicherheits-Header im Browser. Keine Tracking- oder Analysewerkzeuge. Die Maßnahmen werden bei jeder wesentlichen Änderung, mindestens jährlich, überprüft.',

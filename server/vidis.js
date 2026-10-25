@@ -171,7 +171,6 @@ export function vidisRoutes(app, db, { config, secureCookies, HttpError, schoolB
     if (!schoolActive(school)) return fail('avv');
 
     const externalId = `vidis:${claims.sub}`;
-    const fullName = [claims.vorname, claims.nachname].filter((x) => typeof x === 'string' && x.trim()).join(' ').slice(0, 80);
     let user = db.prepare('SELECT * FROM users WHERE external_id = ?').get(externalId);
     if (user && user.role !== role && user.role !== 'admin') {
       // Rolle hat sich geändert (z. B. Referendarin war vorher Schülerin): altes Konto nicht weiterverwenden.
@@ -181,7 +180,6 @@ export function vidisRoutes(app, db, { config, secureCookies, HttpError, schoolB
       if (user.school_id !== school.id) {
         db.prepare('UPDATE users SET school_id = ?, class_id = NULL WHERE id = ?').run(school.id, user.id);
       }
-      if (role === 'teacher' && fullName) db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(fullName, user.id);
     } else {
       let username;
       let displayName;
@@ -192,14 +190,16 @@ export function vidisRoutes(app, db, { config, secureCookies, HttpError, schoolB
       } else {
         do username = `vidis-${crypto.randomBytes(3).toString('hex')}`;
         while (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username));
-        displayName = fullName || 'Lehrkraft';
+        // Vor- und Nachname aus VIDIS werden bewusst nicht gespeichert. Die Lehrkraft wählt unter „Konto“
+        // einen Anzeigenamen.
+        displayName = 'Lehrkraft';
       }
       const r = db
         .prepare('INSERT INTO users (role, username, display_name, password_hash, school_id, external_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(role, username, displayName, '!', school.id, externalId, Date.now());
       user = { id: Number(r.lastInsertRowid) };
     }
-    res.cookie(COOKIE, createSession(db, user.id, idToken), cookieOptions(secureCookies));
+    res.cookie(COOKIE, createSession(db, user.id, idToken), cookieOptions(secureCookies, role));
     res.redirect('/');
   });
 

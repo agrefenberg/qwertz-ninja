@@ -8,7 +8,13 @@ services:
     restart: unless-stopped
     environment:
       SECURE_COOKIES: "1"
+      # Caddy läuft in einem eigenen Container: ein Proxy-Hop, damit die echte Adresse der Nutzer ankommt.
+      TRUST_PROXY: "1"
       QN_DOMAIN: ${QN_DOMAIN:-}
+      # Optional: Code, der bei der Ersteinrichtung eingegeben werden muss
+      QN_SETUP_TOKEN: ${QN_SETUP_TOKEN:-}
+      # Demodaten haben ein bekanntes Passwort und sind deshalb im Internetbetrieb aus (1 = trotzdem erlauben)
+      QN_ALLOW_DEMO: ${QN_ALLOW_DEMO:-}
       # Nur für die Anmeldung über VIDIS (Mehrschulbetrieb), Werte von der FWU
       QN_PUBLIC_URL: ${QN_PUBLIC_URL:-}
       QN_VIDIS_ISSUER: ${QN_VIDIS_ISSUER:-}
@@ -16,6 +22,11 @@ services:
       QN_VIDIS_CLIENT_SECRET: ${QN_VIDIS_CLIENT_SECRET:-}
     volumes:
       - ./data:/data
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   caddy:
     image: caddy:2-alpine
@@ -31,6 +42,7 @@ services:
       - caddy_config:/config
     depends_on:
       - qwertz-ninja
+    logging: *logging
 
 volumes:
   caddy_data:

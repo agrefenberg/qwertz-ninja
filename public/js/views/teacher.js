@@ -1,5 +1,5 @@
 import { append, del, errorBox, fmtDate, fmtDuration, fmtNum, fmtRate, formData, get, h, passwordInput, patch, post, put, toast } from '../ui.js';
-import { enterStudentView, state } from '../app.js';
+import { enterStudentView, refreshMe, state } from '../app.js';
 import { errorAnalysis, stars } from './student.js';
 import { plnSection } from './pln.js';
 import { courseMiniBar, courseSection } from './course-overview.js';
@@ -51,6 +51,9 @@ export async function classesView(app) {
   );
   append(app, 
     h('h1', 'Meine Klassen'),
+    state.me.vidis && state.me.displayName === 'Lehrkraft'
+      ? h('p.notice', 'Bitte wähle unter ', h('a', { href: '#/konto' }, 'Konto'), ' einen Anzeigenamen, z. B. „Frau Huber“. Deinen echten Namen aus VIDIS speichert QWERTZ Ninja nicht.')
+      : null,
     purgeNotice(),
     classes.length
       ? h('div.tiles', classes.map((c) => h('a.tile', { href: `#/klasse/${c.id}` }, h('strong', c.name), h('span.muted.small', `${c.students} Schüler`))))
@@ -115,6 +118,7 @@ export async function classView(app, { id }) {
       h('label.inline', lbToggle, ' Rangliste für diese Klasse anzeigen'),
       h('button', { onclick: () => enterStudentView(cls.id).catch((err) => toast(err.message, 'error')) }, 'Als Schüler ansehen'),
       h('a.button', { href: `/api/classes/${id}/export.csv`, download: true }, 'Ergebnisse exportieren (CSV)'),
+      h('a.button', { href: `/api/classes/${id}/export.json`, download: true, title: 'Alle gespeicherten Daten der Klasse, zum Archivieren vor der Löschung am Schuljahresende' }, 'Alle Daten (JSON)'),
       h(
         'button.danger',
         {
@@ -502,6 +506,7 @@ export async function studentView(app, { id }) {
     h('p', h('button.link', { onclick: () => history.back() }, '← Zurück')),
     h('h1', s.displayName),
     h('p.muted.mono', s.username),
+    h('p', h('a.button.small', { href: `/api/students/${id}/export.json`, download: true }, 'Datenauskunft herunterladen (JSON)'), h('span.muted.small', ' Alle zu diesem Konto gespeicherten Daten, z. B. für eine Auskunft nach Art. 15 DSGVO.')),
     h('h2', 'Kurs'),
     studentCourse(s, id, () => {
       const y = window.scrollY;
@@ -661,9 +666,35 @@ export async function schemesView(app) {
 
 // ---------- Konto ----------
 
+// Anzeigename, den Schüler und Kollegen sehen (bei VIDIS wird der echte Name nicht übernommen).
+function displayNameForm() {
+  const form = h(
+    'form.card.narrow',
+    {
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const showError = errorBox(form);
+        try {
+          await put('/api/me/display-name', formData(form));
+          showError('');
+          await refreshMe();
+          toast('Anzeigename gespeichert');
+        } catch (err) {
+          showError(err.message);
+        }
+      },
+    },
+    h('h2', 'Anzeigename'),
+    h('p.muted.small', 'So erscheinst du in der App, z. B. „Frau Huber“. Dein echter Name aus VIDIS wird nicht gespeichert.'),
+    h('label', 'Anzeigename', h('input', { name: 'displayName', required: true, maxlength: 80, value: state.me.displayName === 'Lehrkraft' ? '' : state.me.displayName })),
+    h('button.primary', { type: 'submit' }, 'Speichern')
+  );
+  return form;
+}
+
 export function accountView(app) {
   if (state.me.vidis) {
-    append(app, h('h1', 'Konto'), h('p', `Du bist über VIDIS angemeldet (${state.me.displayName}). Dein Passwort verwaltest du dort.`));
+    append(app, h('h1', 'Konto'), h('p', 'Du bist über VIDIS angemeldet. Dein Passwort verwaltest du dort.'), displayNameForm());
     return;
   }
   const form = h(

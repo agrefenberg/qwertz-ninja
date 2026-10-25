@@ -10,4 +10,6 @@ compose_file() {
 
 docker compose -f "$(compose_file)" up -d --build --remove-orphans
 docker image prune -f >/dev/null
+# Alten Build-Cache aufräumen, damit die SD-Karte nicht volläuft.
+docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
 echo "QWERTZ Ninja läuft ($(compose_file))."

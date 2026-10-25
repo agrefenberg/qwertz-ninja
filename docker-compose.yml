@@ -7,5 +7,12 @@ services:
       - "${QN_PORT:-3080}:3000"
     environment:
       SECURE_COOKIES: "0"
+      QN_SETUP_TOKEN: ${QN_SETUP_TOKEN:-}
     volumes:
       - ./data:/data
+    # Logs begrenzen, damit die SD-Karte nicht volläuft
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -2016,6 +2016,21 @@ a.button.small,
   margin-top: 0.25rem;
 }
 
+/* Impressum und Datenschutz sind von jeder Seite aus erreichbar. */
+.site-footer {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 1.5rem 1rem 2rem;
+  font-size: 0.85rem;
+}
+.site-footer a {
+  color: var(--muted);
+}
+body.exam-mode .site-footer {
+  display: none;
+}
+
 @page {
   size: A4;
   margin: 12mm 10mm;
@@ -2036,6 +2051,7 @@ a.button.small,
   /* Ohne :has(), damit auch ältere Browser (z. B. Firefox ESR 115) nur das Blatt drucken. */
   .topbar,
   .preview-bar,
+  .site-footer,
   .no-print {
     display: none !important;
   }

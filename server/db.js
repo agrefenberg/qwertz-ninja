@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS schools (
   contact TEXT NOT NULL DEFAULT '',
   year_end TEXT NOT NULL DEFAULT '07-31',
   privacy_note TEXT NOT NULL DEFAULT '',
+  imprint TEXT NOT NULL DEFAULT '',
   last_purge INTEGER NOT NULL DEFAULT 0,
   avv_signed_at INTEGER,
   created_at INTEGER NOT NULL
@@ -218,7 +219,7 @@ CREATE TABLE IF NOT EXISTS badges (
 export function openDb(file) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
   migrate(db);
   seedTexts(db);
@@ -230,6 +231,12 @@ function migrate(db) {
   const has = (table, col) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
   if (!has('pln_attempts', 'left_count')) db.exec('ALTER TABLE pln_attempts ADD COLUMN left_count INTEGER NOT NULL DEFAULT 0');
   if (!has('pln_attempts', 'duration_ms')) db.exec('ALTER TABLE pln_attempts ADD COLUMN duration_ms INTEGER');
+  // Früher wurden bei VIDIS-Lehrkräften Vor- und Nachname gespeichert: einmalig entfernen.
+  if (!db.prepare("SELECT 1 FROM settings WHERE key = 'vidis_names_cleared'").get()) {
+    db.prepare("UPDATE users SET display_name = 'Lehrkraft' WHERE role = 'teacher' AND external_id LIKE 'vidis:%'").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('vidis_names_cleared', '1')").run();
+  }
+  if (!has('schools', 'imprint')) db.exec("ALTER TABLE schools ADD COLUMN imprint TEXT NOT NULL DEFAULT ''");
   if (!has('pln_attempts', 'late_at')) db.exec('ALTER TABLE pln_attempts ADD COLUMN late_at INTEGER');
   if (!has('test_attempts', 'typed')) db.exec("ALTER TABLE test_attempts ADD COLUMN typed TEXT NOT NULL DEFAULT ''");
   if (!has('test_attempts', 'saved_at')) db.exec('ALTER TABLE test_attempts ADD COLUMN saved_at INTEGER');

@@ -1,5 +1,5 @@
 import { del, get, h, post, toast } from './ui.js';
-import { loginView, setupView, privacyView } from './views/auth.js';
+import { imprintView, loginView, setupView, privacyView } from './views/auth.js';
 import * as student from './views/student.js';
 import { basicsView } from './views/basics.js';
 import * as teacher from './views/teacher.js';
@@ -186,6 +186,7 @@ export async function route() {
     if (!state.setup) state.setup = await get('/api/setup');
     renderNav();
     if (path === '/datenschutz') return privacyView(app);
+    if (path === '/impressum') return imprintView(app);
     if (state.setup.needsSetup) return setupView(app);
     if (!state.me) await refreshMe();
     renderNav();
