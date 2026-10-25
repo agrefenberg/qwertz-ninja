@@ -146,7 +146,7 @@ test('PLN-Ablauf: anlegen, freigeben, schreiben, abgeben, PDF', async () => {
   const classId = (await teacher.post('/api/classes', { name: '7a' })).data.id;
   const [c1, c2] = (await teacher.post(`/api/classes/${classId}/students`, { count: 2 })).data.credentials;
   const scheme = (await teacher.post('/api/grading-schemes', { name: 'PLN 7', errorPenalty: 20, thresholds: [200, 170, 140, 110, 80] })).data.id;
-  const textId = (await teacher.get('/api/texts')).data.find((x) => x.title.startsWith('Langtext')).id;
+  const textId = (await teacher.get('/api/texts')).data.find((x) => x.title === 'Von der Schreibmaschine zum Computer').id;
 
   assert.equal((await teacher.post(`/api/classes/${classId}/plns`, { title: 'Ohne Schlüssel', textId })).status, 400);
   const created = await teacher.post(`/api/classes/${classId}/plns`, { title: '1. Tipp-PLN', gradingSchemeId: scheme, textId, format: 'lines', returnRule: 'first' });
@@ -174,7 +174,7 @@ test('PLN-Ablauf: anlegen, freigeben, schreiben, abgeben, PDF', async () => {
   assert.equal((await s1.post(`/api/me/plns/${plnId}/start`)).status, 400, 'nur ein Versuch');
 
   const src = detail.pln.text;
-  const typed = src.slice(0, 120).replace('Schreibmaschine', 'Schriebmaschine') + '\n' + src.slice(121, 300);
+  const typed = src.slice(0, 120).replace('Tastatur', 'Tsatatur') + '\n' + src.slice(121, 300);
   assert.equal((await s1.post(`/api/me/plns/${plnId}/save`, { typed: typed.slice(0, 50), leftCount: 2 })).status, 200);
   // Verlassen des Prüfungsfensters wird gezählt und kann nicht verringert werden.
   await s1.post(`/api/me/plns/${plnId}/save`, { typed: typed.slice(0, 50), leftCount: 0 });
@@ -227,7 +227,7 @@ test('PLN mit Einstellungen: Vorlage nach Richtlinie, Nachteilsausgleich, Note 6
   await teacher.post('/api/login', { username: 'maier', password: t.data.password });
   const classId = (await teacher.post('/api/classes', { name: '6b' })).data.id;
   const [c1, c2] = (await teacher.post(`/api/classes/${classId}/students`, { count: 2 })).data.credentials;
-  const textId = (await teacher.get('/api/texts')).data.find((x) => x.title.startsWith('Langtext')).id;
+  const textId = (await teacher.get('/api/texts')).data.find((x) => x.title === 'Von der Schreibmaschine zum Computer').id;
 
   // 6. Klasse, 1. PLN: 10 Zeilen in 12 Minuten, kein Notenschlüssel nötig.
   const created = await teacher.post(`/api/classes/${classId}/plns`, { title: '1. PLN', settings: { ...presetSettings('6-1'), preset: '6-1', textId } });
