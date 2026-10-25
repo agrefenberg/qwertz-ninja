@@ -147,9 +147,18 @@ function renderPreviewBar() {
   );
 }
 
+// Auf dem Handy klappt das Menü hinter einem Knopf auf, statt die Kopfzeile auf mehrere Zeilen zu verteilen.
+function setMenuOpen(open) {
+  document.querySelector('.topbar').classList.toggle('menu-open', open);
+  document.querySelector('.nav-toggle').setAttribute('aria-expanded', String(open));
+}
+document.querySelector('.nav-toggle').addEventListener('click', () => setMenuOpen(!document.querySelector('.topbar').classList.contains('menu-open')));
+
 function renderNav() {
   const nav = document.getElementById('nav');
   nav.replaceChildren();
+  setMenuOpen(false);
+  document.querySelector('.nav-toggle').hidden = !state.me;
   const name = state.me?.schoolName || state.setup?.schoolName || '';
   document.querySelector('.brand-name').textContent = !name || name.includes('QWERTZ Ninja') ? name || 'QWERTZ Ninja' : `QWERTZ Ninja · ${name}`;
   renderPreviewBar();
