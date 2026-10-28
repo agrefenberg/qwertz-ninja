@@ -46,13 +46,14 @@ function heroCard(me, { exercises, best, passed, lessons }) {
 export async function homeView(app) {
   await refreshMe();
   const me = state.me;
-  const [assignments, results, weak, course, profile, plns] = await Promise.all([
+  const [assignments, results, weak, course, profile, plns, games] = await Promise.all([
     get('/api/me/assignments'),
     get('/api/me/results'),
     get('/api/me/weak-keys'),
     get('/api/me/course'),
     get('/api/me/errors'),
     get('/api/me/plns'),
+    me.class?.games ? get('/api/me/games') : null,
   ]);
   const tip = suggestion(course, profile);
   const passedLessons = course.lessons.filter((l) => l.passed).length;
@@ -104,7 +105,8 @@ export async function homeView(app) {
         'Schwachstellen',
         weak.length ? h('span', 'Gezielt für: ', weak.map((w) => h('kbd', w.ch))) : 'Wird nach ein paar Übungen auf dich zugeschnitten.'
       ),
-      tile('#/grundstellung', 'Grundstellung', 'Fingerzuordnung und Grundreihe wiederholen.')
+      tile('#/grundstellung', 'Grundstellung', 'Fingerzuordnung und Grundreihe wiederholen.'),
+      games ? gamesTile(games) : null
     ),
     h(
       'section.card',
@@ -114,6 +116,14 @@ export async function homeView(app) {
     ),
     badgesSection(me)
   );
+}
+
+// Spiele-Kachel: gesperrt, bis die Grundkompetenz erreicht ist.
+function gamesTile(g) {
+  if (g.unlocked) return tile('#/spiele', 'Spiele', 'Fallende Wörter, Tipp-Snake und Ninja-Lauf.');
+  const t = tile('#/spiele', 'Spiele', `Noch gesperrt. Frei nach Lektion ${g.until.number} „${g.until.title}“, es fehlen noch ${g.missing.length}.`);
+  t.classList.add('tile-locked');
+  return t;
 }
 
 function tile(href, title, desc) {
@@ -273,7 +283,8 @@ function courseOutcome(c) {
     'div',
     h('p.highlight', `${'★'.repeat(c.stars)}${'☆'.repeat(3 - c.stars)} Lektion bestanden!`),
     c.newlyPassed && c.next ? h('p', h('a.button.primary', { href: `#/kurs/${c.next.id}` }, `Weiter: ${c.next.title}`)) : null,
-    c.newlyPassed && !c.next ? h('p', 'Du hast den ganzen Kurs geschafft!') : null
+    c.newlyPassed && !c.next ? h('p', 'Du hast den ganzen Kurs geschafft!') : null,
+    c.gamesUnlocked ? h('p.highlight', 'Grundkompetenz erreicht: Die Spiele sind jetzt frei! ', h('a', { href: '#/spiele' }, 'Zu den Spielen')) : null
   );
 }
 

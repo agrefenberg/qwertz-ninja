@@ -27,6 +27,7 @@ import { buildPlnText, evalRules, gradePln, note1Chars, note1Position, plnHeadin
 import { durationMsFor, linesFor, normalizeSettings, strokes } from '../public/js/pln-rules.js';
 import { writePlnPdf } from './pln-pdf.js';
 import { LESSONS, lessonById, starsFor, PASS_ERROR_RATE, PASS_ERROR_RATE_MAX } from '../public/js/course.js';
+import { GAMES, gameById, gamesAccess, validGamesAfter } from '../public/js/game-rules.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COUNTDOWN_MS = 3000;
@@ -261,7 +262,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
   app.get('/api/me', auth(), (req, res) => {
     const u = req.user;
     const badges = db.prepare('SELECT badge, earned_at FROM badges WHERE user_id = ? ORDER BY earned_at').all(u.id);
-    const cls = u.class_id ? db.prepare('SELECT id, name, leaderboard_enabled FROM classes WHERE id = ?').get(u.class_id) : null;
+    const cls = u.class_id ? db.prepare('SELECT id, name, leaderboard_enabled, games_after FROM classes WHERE id = ?').get(u.class_id) : null;
     const school = schoolById(u.school_id);
     res.json({
       id: u.id,
@@ -273,7 +274,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
       level: levelFor(u.xp),
       badges: badges.map((b) => ({ id: b.badge, ...BADGES[b.badge], earnedAt: b.earned_at })),
       allBadges: Object.entries(BADGES).map(([id, b]) => ({ id, ...b })),
-      class: cls && { id: cls.id, name: cls.name, leaderboard: !!cls.leaderboard_enabled },
+      class: cls && { id: cls.id, name: cls.name, leaderboard: !!cls.leaderboard_enabled, games: cls.games_after !== 'off' },
       schoolName: school ? school.name : brandName(),
       purgeDate: school ? ymd(nextPurgeDate(school)) : null,
       mode: isMulti(db) ? 'multi' : 'single',
@@ -410,6 +411,11 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
       recordKeyStats(db, req.user.id, b.keyStats);
       recordErrors(db, req.user.id, b.confusions, b.errorWords);
       const course = lesson && completed ? updateCourse(req.user.id, lesson, m) : null;
+      // Mit dieser Lektion ist die Grundkompetenz erreicht: Die Spiele sind ab jetzt frei.
+      if (course?.newlyPassed && !req.user.preview) {
+        const g = gamesFor(req.user);
+        course.gamesUnlocked = g.unlocked && !!g.until && LESSONS.indexOf(lesson) < g.until.number;
+      }
       if (kind === 'basics') db.prepare('UPDATE users SET onboarding_done = 1 WHERE id = ?').run(req.user.id);
       return { ...award(req.user, { kind, gross, correct, errors, durationMs, completed, ...m }), course };
     });
@@ -498,6 +504,42 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
 
   app.get('/api/me/course', auth('student'), (req, res) => {
     res.json({ passErrorRate: passRateFor(req.user.id), lessons: courseList(req.user.id) });
+  });
+
+  // ---------- Spiele ----------
+
+  // Lehrkräfte in der Schüleransicht sollen die Spiele ausprobieren können, auch ohne eigenen Kursfortschritt.
+  function gamesFor(user) {
+    const cls = user.class_id && db.prepare('SELECT games_after FROM classes WHERE id = ?').get(user.class_id);
+    const passed = new Set([...courseProgress(user.id).values()].filter((p) => p.passed_at).map((p) => p.lesson_id));
+    const access = gamesAccess(cls ? cls.games_after : 'off', passed);
+    if (user.preview && access.enabled) access.unlocked = true;
+    return access;
+  }
+
+  app.get('/api/me/games', auth('student'), (req, res) => {
+    const scores = new Map(db.prepare('SELECT * FROM game_scores WHERE user_id = ?').all(req.user.id).map((r) => [r.game, r]));
+    res.json({
+      ...gamesFor(req.user),
+      games: GAMES.map((g) => ({ ...g, best: scores.get(g.id)?.best_score ?? 0, bestLevel: scores.get(g.id)?.best_level ?? 0, plays: scores.get(g.id)?.plays ?? 0 })),
+    });
+  });
+
+  // Nur der Rekord je Spiel wird gespeichert; Spiele zählen nicht als Übung und nicht für Noten.
+  app.post('/api/me/games/:game', auth('student'), (req, res) => {
+    const game = gameById(req.params.game);
+    if (!game) throw notFound();
+    const access = gamesFor(req.user);
+    if (!access.unlocked) throw bad(access.enabled ? 'Die Spiele sind für dich noch nicht freigeschaltet.' : 'Die Spiele sind für deine Klasse ausgeschaltet.');
+    const score = int(req.body.score, { max: 10_000_000, name: 'Punkte' });
+    const level = int(req.body.level ?? 1, { min: 1, max: 1000, name: 'Stufe' });
+    const before = db.prepare('SELECT best_score FROM game_scores WHERE user_id = ? AND game = ?').get(req.user.id, game.id);
+    db.prepare(
+      `INSERT INTO game_scores (user_id, game, best_score, best_level, plays, last_played_at) VALUES (?, ?, ?, ?, 1, ?)
+       ON CONFLICT(user_id, game) DO UPDATE SET best_score = MAX(best_score, excluded.best_score),
+         best_level = MAX(best_level, excluded.best_level), plays = plays + 1, last_played_at = excluded.last_played_at`
+    ).run(req.user.id, game.id, score, level, Date.now());
+    res.json({ best: Math.max(score, before?.best_score ?? 0), record: score > 0 && score > (before?.best_score ?? 0) });
   });
 
   app.get('/api/me/errors', auth(), (req, res) => {
@@ -676,6 +718,8 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
     const name = req.body.name !== undefined ? str(req.body.name, { max: 40, name: 'Klassenname' }) : cls.name;
     if (db.prepare('SELECT 1 FROM classes WHERE teacher_id = ? AND name = ? COLLATE NOCASE AND id != ?').get(req.user.id, name, cls.id)) throw bad(`Du hast schon eine Klasse ${name}.`);
     const lb = req.body.leaderboard !== undefined ? (req.body.leaderboard ? 1 : 0) : cls.leaderboard_enabled;
+    const gamesAfter = req.body.gamesAfter !== undefined ? String(req.body.gamesAfter) : cls.games_after;
+    if (!validGamesAfter(gamesAfter)) throw bad('Ungültige Einstellung für die Spiele.');
     let rate = cls.course_pass_rate;
     if (req.body.passErrorRate !== undefined) {
       rate = Number(String(req.body.passErrorRate).replace(',', '.'));
@@ -684,7 +728,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
     }
     let newlyPassed = 0;
     tx(db, () => {
-      db.prepare('UPDATE classes SET name = ?, leaderboard_enabled = ?, course_pass_rate = ? WHERE id = ?').run(name, lb, rate, cls.id);
+      db.prepare('UPDATE classes SET name = ?, leaderboard_enabled = ?, course_pass_rate = ?, games_after = ? WHERE id = ?').run(name, lb, rate, gamesAfter, cls.id);
       // Großzügigere Grenze: Wer mit seinem besten Versuch schon darunter liegt, hat die Lektion jetzt bestanden.
       // Eine strengere Grenze nimmt bereits bestandene Lektionen nicht wieder weg.
       if (rate > cls.course_pass_rate) {
@@ -698,7 +742,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
         );
       }
     });
-    res.json({ ok: true, passErrorRate: rate, newlyPassed });
+    res.json({ ok: true, passErrorRate: rate, newlyPassed, gamesAfter });
   });
 
   app.delete('/api/classes/:id', auth('teacher'), (req, res) => {
@@ -737,6 +781,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
       leaderboard: !!cls.leaderboard_enabled,
       joinCode: cls.join_code,
       passErrorRate: cls.course_pass_rate,
+      gamesAfter: cls.games_after,
       lessonCount: LESSONS.length,
       lessons: LESSONS.map((l) => ({ id: l.id, title: l.title })),
       students: students.map((s) => ({ ...s, level: levelFor(s.xp), course: courseStrip(s.id, progress, manual) })),
@@ -1069,6 +1114,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
       verwechslungen: all('SELECT * FROM error_pairs WHERE user_id = ?'),
       fehlerwoerter: all('SELECT * FROM error_words WHERE user_id = ?'),
       abzeichen: all('SELECT * FROM badges WHERE user_id = ?'),
+      spiele: all('SELECT * FROM game_scores WHERE user_id = ?'),
     };
   }
 

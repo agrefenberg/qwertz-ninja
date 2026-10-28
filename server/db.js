@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS classes (
   leaderboard_enabled INTEGER NOT NULL DEFAULT 0,
   join_code TEXT UNIQUE,
   course_pass_rate REAL NOT NULL DEFAULT 3,
+  games_after TEXT NOT NULL DEFAULT 'umlaute',
   created_at INTEGER NOT NULL
 );
 
@@ -208,6 +209,17 @@ CREATE TABLE IF NOT EXISTS error_words (
   PRIMARY KEY (user_id, word)
 );
 
+-- Bester Spielstand je Spiel (Spiele zählen nicht für Noten und nicht als Übungsergebnis)
+CREATE TABLE IF NOT EXISTS game_scores (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  game TEXT NOT NULL,
+  best_score INTEGER NOT NULL DEFAULT 0,
+  best_level INTEGER NOT NULL DEFAULT 1,
+  plays INTEGER NOT NULL DEFAULT 0,
+  last_played_at INTEGER,
+  PRIMARY KEY (user_id, game)
+);
+
 CREATE TABLE IF NOT EXISTS badges (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   badge TEXT NOT NULL,
@@ -244,6 +256,8 @@ function migrate(db) {
   if (!has('users', 'school_id')) db.exec('ALTER TABLE users ADD COLUMN school_id INTEGER REFERENCES schools(id) ON DELETE CASCADE');
   if (!has('users', 'external_id')) db.exec('ALTER TABLE users ADD COLUMN external_id TEXT');
   if (!has('classes', 'join_code')) db.exec('ALTER TABLE classes ADD COLUMN join_code TEXT');
+  // Spiele werden frei, sobald diese Lektion (und alle davor) bestanden ist; 'off' = aus, 'always' = sofort.
+  if (!has('classes', 'games_after')) db.exec("ALTER TABLE classes ADD COLUMN games_after TEXT NOT NULL DEFAULT 'umlaute'");
   if (!has('classes', 'course_pass_rate')) db.exec('ALTER TABLE classes ADD COLUMN course_pass_rate REAL NOT NULL DEFAULT 3');
   if (!has('sessions', 'id_token')) db.exec('ALTER TABLE sessions ADD COLUMN id_token TEXT');
   if (!has('sessions', 'preview_class_id')) db.exec('ALTER TABLE sessions ADD COLUMN preview_class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL');

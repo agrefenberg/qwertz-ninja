@@ -36,7 +36,7 @@ export function avvSections({ school, operator, vidis, https }) {
     ['§ 2 Art und Zweck der Verarbeitung, Art der Daten, betroffene Personen', [
       'Zweck: Unterricht im Tastschreiben, Lernstandsrückmeldung an Schülerinnen und Schüler sowie Lehrkräfte, Durchführung und Auswertung von Tests und PLN.',
       'Betroffene Personen: Schülerinnen und Schüler, Lehrkräfte und mit der Verwaltung der Anwendung beauftragte Personen der Schule.',
-      'Daten der Schülerinnen und Schüler: pseudonymer Benutzername und Anzeigename (ohne Klarnamen und ohne E-Mail-Adresse), Klassenzugehörigkeit, Passwort ausschließlich als Hash, Übungs- und Testergebnisse (Anschläge, Fehler, Dauer, Fehlerquote), Tastenstatistik und Fehleranalyse, Kursfortschritt, Punkte und Abzeichen, Abschriften aus PLN mit Notenvorschlag, je PLN die Kennzeichen „Nachteilsausgleich“ und „Zehn-Finger-System nicht angewendet“, sofern die Lehrkraft sie setzt.',
+      'Daten der Schülerinnen und Schüler: pseudonymer Benutzername und Anzeigename (ohne Klarnamen und ohne E-Mail-Adresse), Klassenzugehörigkeit, Passwort ausschließlich als Hash, Übungs- und Testergebnisse (Anschläge, Fehler, Dauer, Fehlerquote), Tastenstatistik und Fehleranalyse, Kursfortschritt, Punkte und Abzeichen, Bestwerte in den Lernspielen, Abschriften aus PLN mit Notenvorschlag, je PLN die Kennzeichen „Nachteilsausgleich“ und „Zehn-Finger-System nicht angewendet“, sofern die Lehrkraft sie setzt.',
       'Daten der Lehrkräfte und der Schuladministration: Benutzername, selbst gewählter Anzeigename, Passwort ausschließlich als Hash, angelegte Klassen, Texte, Notenschlüssel, Aufgaben und PLN.',
       vidis
         ? 'Bei Anmeldung über den Vermittlungsdienst VIDIS erhält der Auftragsverarbeiter zusätzlich eine pseudonyme Kennung, die Rolle, die Schulkennung und das Bundesland. Übermittelte Namen werden nicht gespeichert. Der Vermittlungsdienst wird nicht vom Auftragsverarbeiter beauftragt.'
@@ -63,7 +63,7 @@ export function avvSections({ school, operator, vidis, https }) {
       'Der Auftragsverarbeiter stellt dem Verantwortlichen alle Informationen zum Nachweis der Einhaltung dieses Vertrags zur Verfügung und ermöglicht Überprüfungen nach rechtzeitiger Absprache.',
     ]],
     ['§ 8 Löschung und Rückgabe', [
-      `Leistungsdaten (Ergebnisse, Tests, PLN, Fehleranalyse, Kursfortschritt, Punkte und Abzeichen) werden jedes Jahr am Tag nach dem eingestellten Schuljahresende (derzeit ${yearEnd}) automatisch gelöscht. Die Schule kann die Ergebnisse vorher exportieren. Konten und Klassen bleiben bestehen, bis die Schule sie löscht.`,
+      `Leistungsdaten (Ergebnisse, Tests, PLN, Fehleranalyse, Kursfortschritt, Punkte, Abzeichen und Spielstände) werden jedes Jahr am Tag nach dem eingestellten Schuljahresende (derzeit ${yearEnd}) automatisch gelöscht. Die Schule kann die Ergebnisse vorher exportieren. Konten und Klassen bleiben bestehen, bis die Schule sie löscht.`,
       'Nach Ende des Vertrags löscht der Auftragsverarbeiter alle Daten des Verantwortlichen innerhalb von 30 Tagen, sofern der Verantwortliche nicht vorher einen Export verlangt. Datensicherungen werden spätestens 30 Tage danach überschrieben. Die Löschung wird auf Wunsch in Textform bestätigt.',
     ]],
     ['§ 9 Haftung', ['Für die Haftung gilt Art. 82 DSGVO.']],

@@ -4,7 +4,7 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 
 ## Funktionen
 
-- **Lernende:** geführte Wiederholung der Grundstellung beim ersten Anmelden, Übungen mit Texten, Wortlisten und automatisch erzeugten Schwachstellen-Übungen, Bildschirmtastatur mit Fingerfarben, Fehlermodus wählbar (weitertippen oder korrigieren), Anschläge/min und WPM umschaltbar, Gürtel-Level, Abzeichen, Rangliste (wenn freigegeben).
+- **Lernende:** geführte Wiederholung der Grundstellung beim ersten Anmelden, Übungen mit Texten, Wortlisten und automatisch erzeugten Schwachstellen-Übungen, Bildschirmtastatur mit Fingerfarben, Fehlermodus wählbar (weitertippen oder korrigieren), Anschläge/min und WPM umschaltbar, Gürtel-Level, Abzeichen, Rangliste (wenn freigegeben), drei Lernspiele (Fallende Wörter, Tipp-Snake, Ninja-Lauf), die erst nach einer einstellbaren Kurslektion frei werden.
 - **Kurs:** 16 aufeinander aufbauende Lektionen von der Grundreihe bis zur Abschlussprüfung. Bestanden mit höchstens 3 % Fehlern, dann wird die nächste frei; Sterne für Tempo.
 - **Persönliche Fehleranalyse:** Die App merkt sich schwache Tasten, typische Verwechslungen (z. B. „ä statt ö“) und oft verschriebene Wörter, zeigt sie unter „Fehler“ und erzeugt passende Übungen. Lehrkräfte sehen die Analyse in der Schüleransicht.
 - **Lehrkräfte:** Klassen anlegen, Schülerzugänge als Schneideliste drucken (jederzeit erneut für alle oder ausgewählte Schüler, dabei werden neue Passwörter vergeben), Übungen mit Frist und Tests mit Zeitlimit zuweisen, Notenschlüssel mit Notenvorschlag, PLN (Praktischer Leistungsnachweis, 10-Minuten-Abschrift) nach den Richtlinien mit einstellbaren Bewertungsregeln, Druckvorlage und PDF aller Abschriften, eigene Texte, Ergebnisse pro Klasse, Aufgabe und Schüler, CSV-Export der Ergebnisse und vollständiger Datenexport (JSON) pro Klasse oder pro Schüler.
@@ -38,7 +38,7 @@ Tastschreibtrainer für Fortgeschrittene auf deutscher QWERTZ-Tastatur. Web-App 
 - Impressum und Datenschutzhinweis werden unter Admin › Einstellungen (bzw. beim Betreiber) eingetragen und in der Fußzeile jeder Seite verlinkt. Für den Betrieb im Internet sind beide Pflicht.
 - Auskunft und Archiv: Pro Schüler lässt sich eine Datenauskunft (Art. 15 DSGVO) als JSON herunterladen, pro Klasse ein vollständiger Export aller gespeicherten Daten, etwa vor der Löschung am Schuljahresende.
 - Über VIDIS angemeldete Lehrkräfte wählen selbst einen Anzeigenamen; der Klarname aus VIDIS wird nicht gespeichert.
-- Alle Ergebnisse, Aufgaben, Abzeichen, Punkte, Kursfortschritte und Fehleranalysen werden am Tag nach dem Schuljahresende (Standard: 31. Juli) automatisch gelöscht. Konten und Klassen bleiben bestehen.
+- Alle Ergebnisse, Aufgaben, Abzeichen, Punkte, Spielstände, Kursfortschritte und Fehleranalysen werden am Tag nach dem Schuljahresende (Standard: 31. Juli) automatisch gelöscht. Konten und Klassen bleiben bestehen.
 - Die Daten liegen in einer einzigen SQLite-Datei auf dem eigenen Server.
 - Alle mitgelieferten Übungstexte wurden eigens für QWERTZ Ninja geschrieben. Die Schrift Plus Jakarta Sans (SIL Open Font License, `public/fonts`) wird vom eigenen Server ausgeliefert.
 

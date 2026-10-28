@@ -2,6 +2,7 @@
 // Freischalten von Hand und die Fehlergrenze zum Bestehen.
 import { fmtNum, fmtRate, h, patch, post, toast } from '../ui.js';
 import { PASS_ERROR_RATE, PASS_ERROR_RATE_MAX } from '../course.js';
+import { GAMES_AFTER_DEFAULT, GAMES_ALWAYS, GAMES_OFF } from '../game-rules.js';
 
 const STATE_LABEL = {
   passed: 'bestanden',
@@ -203,8 +204,44 @@ export function courseSection(cls, refresh) {
           h('p.muted.small', 'Ohne Auswahl in der Tabelle gilt das für die ganze Klasse. Freigeschaltete Lektionen können geübt werden, bestanden sind sie erst mit einem Versuch unter der Fehlergrenze.'),
         ]
       : h('p.muted', 'Noch keine Schülerzugänge.'),
+    gamesSetting(cls, refresh),
     h('h3', 'Fehlergrenze'),
     h('p.muted.small', `Eine Lektion ist bestanden, wenn die Fehlerquote höchstens so hoch ist. Standard sind ${PASS_ERROR_RATE} %. Wird die Grenze großzügiger, gelten Lektionen als bestanden, deren bester Versuch schon darunter lag. Eine strengere Grenze nimmt nichts zurück.`),
     rateForm
   );
+}
+
+// Ab welcher Lektion die Lernspiele frei werden (Grundkompetenz), oder ganz aus bzw. sofort.
+function gamesSetting(cls, refresh) {
+  const idx = cls.lessons.findIndex((l) => l.id === cls.gamesAfter);
+  const n = cls.students.length;
+  const unlocked = cls.gamesAfter === GAMES_ALWAYS ? n : idx < 0 ? 0 : cls.students.filter((s) => s.course.slice(0, idx + 1).every((c) => c.s === 'passed')).length;
+  const select = h(
+    'select',
+    {
+      'aria-label': 'Spiele freischalten',
+      onchange: async (e) => {
+        try {
+          await patch(`/api/classes/${cls.id}`, { gamesAfter: e.target.value });
+          toast(e.target.value === GAMES_OFF ? 'Spiele ausgeschaltet' : 'Gespeichert');
+          await refresh();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      },
+    },
+    h('option', { value: GAMES_OFF }, 'Aus'),
+    cls.lessons.map((l, i) => h('option', { value: l.id }, `Nach Lektion ${i + 1}: ${l.title}${l.id === GAMES_AFTER_DEFAULT ? ' (empfohlen)' : ''}`)),
+    h('option', { value: GAMES_ALWAYS }, 'Sofort, ohne Voraussetzung')
+  );
+  select.value = cls.gamesAfter;
+  return [
+    h('h3', 'Spiele'),
+    h(
+      'p.muted.small',
+      'Fallende Wörter, Tipp-Snake und Ninja-Lauf sind freiwillig und zählen nicht für Noten. Sie werden frei, wenn die gewählte Lektion und alle davor bestanden sind. Empfohlen ist „Umlaute und ß“: Dann sitzen alle Buchstaben, Großschreibung und Umlaute.'
+    ),
+    h('label.inline', 'Spiele freischalten ', select),
+    cls.gamesAfter !== GAMES_OFF && n ? h('p.small', `${unlocked} von ${n} Schülern haben die Spiele frei.`) : null,
+  ];
 }
