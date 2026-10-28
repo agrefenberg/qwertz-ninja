@@ -39,6 +39,7 @@ function rulesLine(s, schemeName = '') {
     if (s.missingLinePenalty) parts.push(`je fehlende Zeile −${s.missingLinePenalty} ${s.missingLinePenalty === 1 ? 'Stufe' : 'Stufen'}`);
   }
   if (s.capitalDouble) parts.push('Großbuchstabe = 2 Anschläge');
+  parts.push(s.warmupSec ? `vorher ${s.warmupSec} s eintippen` : 'ohne Eintippen');
   parts.push(s.returnRule === 'each' ? 'jeder Return ein Fehler' : 'erster Return ein Fehler');
   const nta = [s.lrsTimePct ? `+${s.lrsTimePct} % Zeit` : '', s.mode === 'count' && s.lrsLinesPct ? `−${s.lrsLinesPct} % Zeilen` : ''].filter(Boolean).join(', ');
   if (nta) parts.push(`Nachteilsausgleich ${nta}`);
@@ -101,7 +102,7 @@ function settingsFields(initial, schemes, { locked = false, open = false } = {})
         'div.grid4',
         h('label.span2', 'Bewertungsart', h('select', { name: 'mode', disabled: locked, onchange: (e) => render(normalizeSettings({ ...read(), mode: e.target.value, preset: undefined })) }, Object.entries(MODES).map(([v, l]) => h('option', { value: v, selected: v === s.mode }, l)))),
         field('durationMin', 'Arbeitszeit (Min.)', s.durationMin, { required: true }),
-        field('weight', 'Gewichtung', s.weight)
+        field('warmupSec', 'Eintippen vorher (Sek., 0 = aus)', s.warmupSec)
       ),
       h(
         'div.grid4',
@@ -112,6 +113,7 @@ function settingsFields(initial, schemes, { locked = false, open = false } = {})
         field('lineChars', 'Zeichen je Zeile', s.lineChars, { disabled: locked }),
         field('lrsTimePct', 'Nachteilsausgleich: % mehr Zeit', s.lrsTimePct)
       ),
+      h('div.grid4', field('weight', 'Gewichtung', s.weight)),
       h(
         'div.pln-checks',
         check('capitalDouble', 'Großbuchstabe zählt 2 Anschläge', s.capitalDouble),
@@ -304,7 +306,7 @@ export async function plnView(app, { id }) {
     r.state === 'none'
       ? h('span.muted', 'nicht begonnen')
       : r.state === 'running'
-        ? h('span.tag', `schreibt bis ${time(r.end_at)}`)
+        ? h('span.tag', r.started_at > Date.now() ? `tippt sich ein, Beginn ${time(r.started_at)}` : `schreibt bis ${time(r.end_at)}`)
         : h('span', 'abgegeben', h('span.muted.small', ` ${time(r.started_at)}`));
 
   append(
@@ -429,15 +431,17 @@ export async function plnSheetView(app, { id, nta = false }) {
 
   const renderBody = () => {
     const gap = (l) => opts.block && l.no % opts.block === 0 && l.no < lines.length;
+    const hasMark = (l) => pos >= l.start && pos <= l.start + l.text.length;
+    const cls = (l) => `${gap(l) ? '.pln-gap' : ''}${hasMark(l) ? '.pln-mark-row' : ''}`;
     const txt = (l) => withMarker(l.text, l.start);
     body.replaceChildren(
       withNumbers
         ? h(
             'table.pln-lines',
             h('thead', h('tr', h('th', 'Zeile'), h('th', 'Text'), h('th', 'Anschläge'))),
-            h('tbody', lines.map((l) => h(`tr${gap(l) ? '.pln-gap' : ''}`, h('td.no', l.no), h('td.txt', txt(l)), h('td.no', l.strokes))))
+            h('tbody', lines.map((l) => h(`tr${cls(l)}`, h('td.no', l.no), h('td.txt', txt(l)), h('td.no', l.strokes))))
           )
-        : h('div.pln-plain', lines.map((l) => h(`div${gap(l) ? '.pln-gap' : ''}`, txt(l))))
+        : h('div.pln-plain', lines.map((l) => h(`div${cls(l)}`, txt(l))))
     );
     // Passt eine Zeile bei der gewählten Größe nicht aufs Blatt, wird die Schrift verkleinert.
     // Die Vorlage mit großer Schrift wird quer gedruckt; passt es auch dann nicht, brechen die Zeilen um.
@@ -595,6 +599,9 @@ export async function studentPlnView(app, { id }) {
           h('li', 'Lege dein Blatt mit dem Text neben die Tastatur. Am Bildschirm siehst du den Text nicht.'),
           h('li', 'Es ist ein Fließtext im Zehn-Finger-System zu schreiben. Die Returntaste nicht benutzen.'),
           h('li', 'Der Nummernblock darf verwendet werden. Korrigieren mit der Rücktaste ist erlaubt.'),
+          s.warmupSec
+            ? h('li', `Zuerst kannst du dich ${s.warmupSec} Sekunden lang eintippen. Das wird nicht gespeichert und nicht gewertet. Danach beginnt der PLN automatisch.`)
+            : null,
           h('li', h('b', `Du hast genau ${minutesText(fmtMin(s.durationMs))}.`), ' Danach wird dein Text automatisch gespeichert. Du kannst nur einmal beginnen.')
         ),
         h(
@@ -613,7 +620,7 @@ export async function studentPlnView(app, { id }) {
               }
             },
           },
-          'PLN starten'
+          s.warmupSec ? 'Eintippen und PLN starten' : 'PLN starten'
         )
       )
     );
@@ -624,7 +631,7 @@ export async function studentPlnView(app, { id }) {
 
 function runPln(app, s, head) {
   const offset = s.serverNow - Date.now(); // Serverzeit = lokale Zeit + offset
-  const endAt = s.startedAt + s.durationMs;
+  let endAt = s.startedAt + s.durationMs;
   const clock = h('span.pln-clock', clockText(s.durationMs));
   const status = h('span.muted.small.pln-save', '');
   const area = h('textarea.pln-area', {
@@ -653,7 +660,53 @@ function runPln(app, s, head) {
   area.value = local && (!s.savedAt || local.at > s.savedAt) ? local.typed : s.typed || '';
   const overlay = h('div.pln-countdown', '');
   const leftNote = h('div.pln-warning', { hidden: true });
-  append(app, ...head, h('div.pln-bar', clock, status), leftNote, h('div.pln-stage', area, overlay));
+
+  // Eintippen: eigenes Feld, das weder gespeichert noch gewertet wird. Danach beginnt der PLN.
+  const warmClock = h('span.pln-clock.pln-clock-warm', '');
+  const warmArea = h('textarea.pln-area.pln-warmup', {
+    spellcheck: 'false',
+    autocomplete: 'off',
+    autocorrect: 'off',
+    autocapitalize: 'off',
+    'aria-label': 'Eintippen',
+    onpaste: (e) => e.preventDefault(),
+    ondrop: (e) => e.preventDefault(),
+    oncontextmenu: (e) => e.preventDefault(),
+    onkeydown: (e) => e.key === 'Tab' && e.preventDefault(),
+  });
+  const skip = h('button.small', {
+    onclick: async () => {
+      skip.disabled = true;
+      try {
+        const st = await post(`/api/me/plns/${s.id}/begin`);
+        s.startedAt = st.startedAt;
+        s.warmupUntil = st.warmupUntil;
+        endAt = s.startedAt + s.durationMs;
+        tick();
+      } catch (e) {
+        toast(e.message, 'error');
+        skip.disabled = false;
+      }
+    },
+  }, 'Fertig, PLN jetzt beginnen');
+  const warmBar = h('div.pln-bar.pln-warm-bar', h('strong', 'Eintippen'), warmClock, h('span.muted.small', 'Wird nicht gespeichert und nicht gewertet.'), skip);
+  const warmStage = h('div.pln-stage', warmArea);
+  const mainBar = h('div.pln-bar', clock, status);
+  const mainStage = h('div.pln-stage', area, overlay);
+  let warming = Date.now() + offset < (s.warmupUntil ?? 0);
+  if (warming) {
+    mainBar.hidden = true;
+    append(app, ...head, warmBar, leftNote, warmStage, mainBar, mainStage);
+    mainStage.hidden = true;
+    setTimeout(() => warmArea.focus(), 0);
+  } else append(app, ...head, mainBar, leftNote, mainStage);
+  const endWarmup = () => {
+    warming = false;
+    warmBar.remove();
+    warmStage.remove();
+    mainBar.hidden = false;
+    mainStage.hidden = false;
+  };
 
   // Prüfungsmodus: Menü ausblenden, Navigation sperren, Vollbild. Verlassen des Fensters wird gezählt.
   state.examLock = location.hash;
@@ -757,6 +810,13 @@ function runPln(app, s, head) {
 
   const tick = () => {
     const now = Date.now() + offset;
+    if (warming) {
+      if (now < s.warmupUntil) {
+        warmClock.textContent = clockText(s.warmupUntil - now);
+        return;
+      }
+      endWarmup();
+    }
     if (now < s.startedAt) {
       overlay.hidden = false;
       overlay.textContent = `Gleich geht es los: ${Math.ceil((s.startedAt - now) / 1000)}`;

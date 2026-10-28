@@ -1792,6 +1792,16 @@ body.exam-mode .container {
   border-radius: var(--radius-s);
   background: var(--coral);
 }
+.pln-warm-bar {
+  flex-wrap: wrap;
+}
+.pln-clock-warm {
+  background: var(--cyan);
+  color: var(--ink);
+}
+textarea.pln-warmup {
+  min-height: 40vh;
+}
 .pln-warning[hidden] {
   display: none;
 }
@@ -1836,19 +1846,22 @@ body.exam-mode .container {
 .pln-sheet-large {
   font-size: 15pt;
 }
+/* Note-1-Marke im Text: ein Strich ohne Breite, das Etikett steht darunter in einem eigenen
+   Zwischenraum (pln-mark-row), damit es kein Wort der Nachbarzeilen verdeckt. */
 .mark1-at {
   position: relative;
   display: inline-block;
   width: 0;
-  height: 1.1em;
-  border-left: 2px solid #000;
-  vertical-align: -0.2em;
+  height: 1.25em;
+  border-left: 2.5px solid #000;
+  vertical-align: -0.3em;
 }
 .mark1-at span {
   position: absolute;
-  bottom: 100%;
-  left: -2.2em;
-  padding: 0 3px;
+  top: calc(100% + 1px);
+  left: 0;
+  transform: translateX(-50%);
+  padding: 0 4px;
   border: 1px solid #000;
   border-radius: 3px;
   background: #fff;
@@ -1897,6 +1910,11 @@ body.exam-mode .container {
 .pln-plain .pln-gap,
 .pln-lines tr.pln-gap td {
   padding-bottom: 0.9em;
+}
+/* Platz für das Etikett der Note-1-Marke unter der Zeile */
+.pln-plain .pln-mark-row,
+.pln-lines tr.pln-mark-row td {
+  padding-bottom: max(0.9em, calc(8.5pt * 1.2 + 6px));
 }
 .pln-wrap .pln-plain,
 .pln-wrap .pln-lines td.txt {

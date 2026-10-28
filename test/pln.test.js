@@ -171,6 +171,13 @@ test('PLN-Ablauf: anlegen, freigeben, schreiben, abgeben, PDF', async () => {
 
   const started = await s1.post(`/api/me/plns/${plnId}/start`);
   assert.equal(started.status, 200);
+  // Vor dem PLN 90 Sekunden Eintippen, danach der Countdown. Vorzeitig beenden ist möglich.
+  assert.equal(info.warmupSec, 90);
+  assert.ok(started.data.startedAt - started.data.serverNow >= 92000, 'Arbeitszeit beginnt erst nach dem Eintippen');
+  assert.equal(started.data.startedAt - started.data.warmupUntil, 3000);
+  const begun = (await s1.post(`/api/me/plns/${plnId}/begin`)).data;
+  assert.ok(begun.startedAt - begun.serverNow <= 3000, 'Eintippen vorzeitig beendet');
+  assert.equal((await s1.post(`/api/me/plns/${plnId}/begin`)).data.startedAt, begun.startedAt, 'Beginn verschiebt sich nicht mehr');
   assert.equal((await s1.post(`/api/me/plns/${plnId}/start`)).status, 400, 'nur ein Versuch');
 
   const src = detail.pln.text;
@@ -190,7 +197,7 @@ test('PLN-Ablauf: anlegen, freigeben, schreiben, abgeben, PDF', async () => {
   await s2.post('/api/login', { username: c2.username, password: c2.password });
   await s2.post(`/api/me/plns/${plnId}/start`);
   await s2.post(`/api/me/plns/${plnId}/save`, { typed: src.slice(0, 80) });
-  db.prepare('UPDATE pln_attempts SET started_at = started_at - 700000 WHERE user_id = (SELECT id FROM users WHERE username = ?)').run(c2.username);
+  db.prepare('UPDATE pln_attempts SET started_at = started_at - 800000 WHERE user_id = (SELECT id FROM users WHERE username = ?)').run(c2.username);
   assert.equal((await s2.post(`/api/me/plns/${plnId}/save`, { typed: src.slice(0, 500) })).status, 400);
   // War beim Zeitende die Verbindung weg, wird der eingefrorene Text als Endabgabe nachgereicht (bis 30 Minuten).
   assert.equal((await s2.post(`/api/me/plns/${plnId}/save`, { typed: src.slice(0, 100), final: true })).status, 200);
