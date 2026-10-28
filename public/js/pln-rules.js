@@ -27,6 +27,7 @@ export const FORMATS = {
 export const DEFAULTS = {
   mode: 'percent',
   durationMin: 10,
+  warmupSec: 90, // Eintippen vor dem PLN, wird nicht gespeichert und nicht gewertet (0 = aus)
   format: 'lines',
   returnRule: 'each',
   capitalDouble: true, // Großbuchstabe zählt 2 Anschläge
@@ -91,6 +92,7 @@ export function normalizeSettings(input = {}) {
   };
   s.mode = MODES[input.mode] ? input.mode : DEFAULTS.mode;
   s.durationMin = num(input.durationMin, 1, 60, DEFAULTS.durationMin);
+  s.warmupSec = num(input.warmupSec, 0, 600, DEFAULTS.warmupSec);
   s.format = s.mode === 'count' ? 'lines' : FORMATS[input.format] ? input.format : DEFAULTS.format;
   s.returnRule = RETURN_RULES[input.returnRule] ? input.returnRule : DEFAULTS.returnRule;
   s.capitalDouble = bool(input.capitalDouble, DEFAULTS.capitalDouble);

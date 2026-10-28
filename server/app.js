@@ -1458,6 +1458,9 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
       durationMs: a ? attemptMs(a) : durationMsFor(s, !!flagsOf(p.id, userId).lrs),
       serverNow: now,
       startedAt: a?.started_at ?? null,
+      // Bis hierhin läuft das Eintippen, danach der Countdown bis zum Beginn.
+      warmupUntil: a ? a.started_at - COUNTDOWN_MS : null,
+      warmupSec: s.warmupSec,
       leftCount: a?.left_count ?? 0,
       ended: plnEnded(a, now),
       submitted: !!a?.submitted_at,
@@ -1487,11 +1490,23 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
     // Die Arbeitszeit (mit Nachteilsausgleich) wird beim Start festgehalten.
     const ms = durationMsFor(plnSettings(p), !!flagsOf(p.id, req.user.id).lrs);
     try {
-      db.prepare('INSERT INTO pln_attempts (pln_id, user_id, started_at, duration_ms) VALUES (?, ?, ?, ?)').run(p.id, req.user.id, Date.now() + COUNTDOWN_MS, ms);
+      // Vor dem Beginn kann sich die Person eintippen. Die Arbeitszeit startet erst danach.
+      const warmupMs = plnSettings(p).warmupSec * 1000;
+      db.prepare('INSERT INTO pln_attempts (pln_id, user_id, started_at, duration_ms) VALUES (?, ?, ?, ?)').run(p.id, req.user.id, Date.now() + warmupMs + COUNTDOWN_MS, ms);
     } catch {
       throw bad('Diesen PLN hast du schon begonnen.');
     }
     res.json({ ...plnState(p, req.user.id), countdownMs: COUNTDOWN_MS });
+  });
+
+  // Eintippen vorzeitig beenden: Der PLN beginnt dann nach dem kurzen Countdown.
+  app.post('/api/me/plns/:id/begin', auth('student'), (req, res) => {
+    const p = studentPln(req);
+    const a = db.prepare('SELECT * FROM pln_attempts WHERE pln_id = ? AND user_id = ?').get(p.id, req.user.id);
+    if (!a) throw bad('Der PLN wurde nicht gestartet.');
+    const startAt = Date.now() + COUNTDOWN_MS;
+    if (a.started_at > startAt) db.prepare('UPDATE pln_attempts SET started_at = ? WHERE pln_id = ? AND user_id = ?').run(startAt, p.id, req.user.id);
+    res.json(plnState(p, req.user.id));
   });
 
   app.post('/api/me/plns/:id/save', auth('student'), (req, res) => {
