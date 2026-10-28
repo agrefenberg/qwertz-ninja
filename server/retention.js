@@ -36,13 +36,13 @@ export function purgeIfDue(db, now = new Date()) {
   return purged;
 }
 
-// Löscht alle Leistungsdaten einer Schule (auch Kursfortschritt, Fehleranalyse und PLN-Abschriften).
+// Löscht alle Leistungsdaten einer Schule (auch Kursfortschritt, Fehleranalyse, Spielstände und PLN-Abschriften).
 // Konten und Klassen bleiben bestehen.
 export function purgeSchool(db, schoolId) {
   const users = 'SELECT id FROM users WHERE school_id = ?';
   const classes = `SELECT c.id FROM classes c JOIN users t ON t.id = c.teacher_id WHERE t.school_id = ?`;
   tx(db, () => {
-    for (const table of ['results', 'test_attempts', 'pln_attempts', 'key_stats', 'course_progress', 'course_unlocks', 'error_pairs', 'error_words', 'badges']) {
+    for (const table of ['results', 'test_attempts', 'pln_attempts', 'key_stats', 'course_progress', 'course_unlocks', 'error_pairs', 'error_words', 'game_scores', 'badges']) {
       db.prepare(`DELETE FROM ${table} WHERE user_id IN (${users})`).run(schoolId);
     }
     db.prepare(`DELETE FROM assignments WHERE class_id IN (${classes})`).run(schoolId);

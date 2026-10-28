@@ -111,7 +111,7 @@ export async function settingsView(app) {
     },
     h('label', 'Name der Schule', h('input', { name: 'schoolName', required: true, maxlength: 120, value: s.schoolName })),
     h('label', 'Schuljahresende (MM-TT)', h('input', { name: 'yearEnd', required: true, pattern: '\\d{2}-\\d{2}', value: s.yearEnd })),
-    h('p.muted.small', 'Am Tag danach werden alle Ergebnisse, Aufgaben, Abzeichen und Punkte automatisch gelöscht. Konten und Klassen bleiben bestehen.'),
+    h('p.muted.small', 'Am Tag danach werden alle Ergebnisse, Aufgaben, Abzeichen, Punkte und Spielstände automatisch gelöscht. Konten und Klassen bleiben bestehen.'),
     s.mode === 'multi'
       ? h('label', 'Datenschutzhinweis der Schule (sehen die Nutzer nach der Anmeldung unter „Datenschutz“)', h('textarea', { name: 'privacyNote', rows: 8, maxlength: 10000 }, s.privacyNote))
       : [

@@ -6,6 +6,7 @@ import * as teacher from './views/teacher.js';
 import * as admin from './views/admin.js';
 import { plnSheetNtaView, plnSheetView, plnView, studentPlnView } from './views/pln.js';
 import * as operator from './views/operator.js';
+import { gameView, gamesView } from './views/games.js';
 
 export const state = { me: null, setup: null, cleanup: null };
 
@@ -23,6 +24,8 @@ const ROUTES = {
     ['/aufgabe/:id', student.assignmentView],
     ['/pln/:id', studentPlnView],
     ['/grundstellung', basicsView],
+    ['/spiele', gamesView],
+    ['/spiele/:id', gameView],
     ['/rangliste', student.leaderboardView],
     ['/verlauf', student.historyView],
     ['/einstellungen', student.settingsView],
@@ -58,6 +61,7 @@ const NAV = {
     ['#/kurs', 'Kurs'],
     ['#/fehler', 'Fehler'],
     ['#/verlauf', 'Verlauf'],
+    ['#/spiele', 'Spiele'],
     ['#/rangliste', 'Rangliste'],
     ['#/einstellungen', 'Einstellungen'],
   ],
@@ -168,7 +172,7 @@ function renderNav() {
   // Schüler ohne Klasse sehen nur die Beitrittsseite, also kein Menü.
   const showMenu = !(state.me.role === 'student' && !state.me.class);
   nav.append(
-    showMenu ? h('span.nav-pill', NAV[state.me.role].map(([href, label]) => h('a', { href, class: section === href ? 'active' : null }, label))) : '',
+    showMenu ? h('span.nav-pill', NAV[state.me.role].filter(([href]) => href !== '#/spiele' || state.me.class?.games).map(([href, label]) => h('a', { href, class: section === href ? 'active' : null }, label))) : '',
     state.me.role === 'teacher'
       ? h('button.small', { onclick: () => enterStudentView().catch((err) => toast(err.message, 'error')), title: 'QWERTZ Ninja so sehen, wie Schüler es sehen' }, 'Schüleransicht')
       : '',
