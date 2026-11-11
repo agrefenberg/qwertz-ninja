@@ -75,6 +75,8 @@ Das Skript aktualisiert das System, schaltet automatische Sicherheitsupdates ein
 
 Ohne Skript geht es auch von Hand: `QN_DOMAIN=ninja.example.de docker compose -f docker-compose.https.yml up -d --build`. Wichtig: den Admin anlegen, bevor die Ports freigegeben werden. Wer die Ports schon vorher freigibt, setzt in `.env` einen Einrichtungs-Code `QN_SETUP_TOKEN=…`; der erste Admin lässt sich dann nur mit diesem Code anlegen.
 
+Im Schulnetz ist die App im HTTPS-Betrieb zusätzlich ohne HTTPS unter dem Namen des Geräts erreichbar, z. B. `http://qwertz.local` oder `http://192.168.1.20`. Das Skript `lan-adressen.sh` ermittelt diese Adressen und reicht sie an Caddy weiter. Eigene Liste in `.env`: `QN_LAN_HOSTS=http://qwertz.local, http://qwertz`. Im Schulnetz ohne HTTPS wird das Anmelde-Cookie nicht als „Secure“ markiert, sonst würde der Browser es über `http://` nicht zurückschicken.
+
 Anmeldungen sind gegen Durchprobieren geschützt: nach 5 Fehlversuchen ist der Benutzername eine Minute gesperrt, nach 30 Fehlversuchen von einer Adresse ist diese 15 Minuten gesperrt. Hinter Caddy sieht die App die echte Adresse des Geräts (`TRUST_PROXY=1` in `docker-compose.https.yml`; hinter einem anderen Proxy entsprechend anpassen). Die Adressen werden nur im Arbeitsspeicher gehalten und nach höchstens 15 Minuten vergessen. Der Container meldet über einen Healthcheck, ob die App antwortet (`docker ps` zeigt `healthy`), und die Protokolle sind auf wenige Megabyte begrenzt.
 
 ### Ohne Docker
