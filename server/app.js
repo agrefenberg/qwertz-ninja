@@ -76,6 +76,9 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
   app.disable('x-powered-by');
   // Hinter Caddy (eigener Container) ist der Proxy ein Hop entfernt: Dann liefert req.ip die echte Adresse.
   app.set('trust proxy', trustProxy);
+  // Caddy reicht im Schulnetz auch Anfragen ohne HTTPS weiter (z. B. http://qwertz.local, siehe Caddyfile).
+  // Dort darf das Anmelde-Cookie nicht „Secure“ sein, sonst schickt der Browser es nie zurück.
+  const viaLanHttp = (req) => req.protocol === 'http' && req.get('X-Forwarded-Proto') === 'http';
 
   app.use((req, res, next) => {
     res.set({
@@ -203,7 +206,7 @@ export function createApp(db, { secureCookies = false, vidis = null, trustProxy 
       throw new HttpError(403, 'Deine Schule ist noch nicht freigeschaltet. Bitte wende dich an die Schulleitung.');
     }
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
-    res.cookie(COOKIE, createSession(db, user.id), cookieOptions(secureCookies, user.role));
+    res.cookie(COOKIE, createSession(db, user.id), cookieOptions(secureCookies && !viaLanHttp(req), user.role));
     res.json({ ok: true });
   });
 
