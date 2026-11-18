@@ -47,6 +47,11 @@ test('Internetbetrieb: Einrichtungs-Code, nur JSON, Demodaten aus, Export, Anmel
   assert.match(adminCookie, /Secure/);
   assert.match(adminCookie, /Max-Age=43200/);
 
+  // Im Schulnetz ohne HTTPS (Caddy meldet X-Forwarded-Proto: http) kein Secure-Cookie, sonst klappt die Anmeldung nicht.
+  const lan = await client().call('POST', '/api/login', JSON.stringify({ username: 'admin', password: 'sehrgeheim123' }), { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'http' });
+  assert.equal(lan.status, 200);
+  assert.doesNotMatch(lan.headers.get('set-cookie'), /Secure/);
+
   // Demodaten haben ein öffentlich bekanntes Passwort und sind deshalb aus.
   assert.equal((await admin.get('/api/admin/demo')).data.allowed, false);
   assert.equal((await admin.post('/api/admin/demo', { action: 'create' })).status, 400);

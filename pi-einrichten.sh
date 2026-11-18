@@ -115,7 +115,7 @@ if [ -n "$DOMAIN" ]; then
   set_env QN_DOMAIN "$DOMAIN"
   say "Auf HTTPS umstellen ($DOMAIN)"
   docker compose -f docker-compose.yml down --remove-orphans
-  docker compose -f docker-compose.https.yml up -d --build --remove-orphans
+  QN_LAN_HOSTS=$(bash ./lan-adressen.sh) docker compose -f docker-compose.https.yml up -d --build --remove-orphans
 else
   set_env QN_DOMAIN ""
 fi
@@ -123,7 +123,7 @@ chown "$OWNER": .env 2>/dev/null || true
 
 # ---------------------------------------------------------------- Sicherung
 say "Nächtliche Sicherung einrichten (2:30 Uhr)"
-chmod +x start.sh sicherung.sh passwort-zuruecksetzen.sh pi-einrichten.sh
+chmod +x start.sh lan-adressen.sh sicherung.sh passwort-zuruecksetzen.sh pi-einrichten.sh
 cat > /etc/cron.d/qwertz-ninja <<EOF
 # QWERTZ Ninja: nächtliche Sicherung der Datenbank
 30 2 * * * root $APP_DIR/sicherung.sh >> /var/log/qwertz-ninja-sicherung.log 2>&1
@@ -138,6 +138,7 @@ if [ -n "$DOMAIN" ]; then
   info "  Ports 80 und 443 (TCP) an dieses Gerät ($IP) weiterleiten."
   info "Danach holt sich die App das HTTPS-Zertifikat selbst. Adresse: https://$DOMAIN"
   info "Wenn es nach ein paar Minuten nicht geht: docker compose -f docker-compose.https.yml logs caddy"
+  info "Im Schulnetz geht es auch ohne HTTPS über den Namen des Pi: http://$(hostname -s).local"
 else
   info "QWERTZ Ninja läuft im lokalen Netz: http://$IP:$PORT"
   info "Für HTTPS und Zugriff von außen dieses Skript später erneut starten."

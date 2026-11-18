@@ -8,8 +8,12 @@ compose_file() {
   if [ -f .env ] && grep -qE '^QN_DOMAIN=.+' .env; then echo docker-compose.https.yml; else echo docker-compose.yml; fi
 }
 
+# Im HTTPS-Betrieb ist die App im Schulnetz zusätzlich ohne HTTPS erreichbar, z. B. http://qwertz.local
+QN_LAN_HOSTS=$(bash ./lan-adressen.sh)
+export QN_LAN_HOSTS
 docker compose -f "$(compose_file)" up -d --build --remove-orphans
 docker image prune -f >/dev/null
 # Alten Build-Cache aufräumen, damit die SD-Karte nicht volläuft.
 docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
 echo "QWERTZ Ninja läuft ($(compose_file))."
+if [ "$(compose_file)" = docker-compose.https.yml ]; then echo "Im Schulnetz auch ohne HTTPS: ${QN_LAN_HOSTS#http://localhost, }"; fi

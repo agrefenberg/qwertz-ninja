@@ -1,9 +1,21 @@
-{$QN_DOMAIN} {
+(app) {
 	encode gzip
-	header Strict-Transport-Security "max-age=31536000"
 	# Keine Zugriffsprotokolle mit IP-Adressen (Datensparsamkeit).
 	log {
 		output discard
 	}
 	reverse_proxy qwertz-ninja:3000
+}
+
+# Öffentliche Adresse: HTTPS mit automatischem Zertifikat.
+{$QN_DOMAIN} {
+	header Strict-Transport-Security "max-age=31536000"
+	import app
+}
+
+# Im Schulnetz ohne HTTPS, z. B. http://qwertz.local, http://qwertz oder http://192.168.1.20.
+# Für solche Namen gibt es kein öffentliches Zertifikat. start.sh trägt Rechnername und IP-Adresse
+# des Pi selbst ein; eigene Liste in .env, z. B. QN_LAN_HOSTS=http://qwertz.local, http://qwertz
+{$QN_LAN_HOSTS:http://localhost} {
+	import app
 }
